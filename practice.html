@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Preflop Trainer — レンジ早押し練習</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1e3a2f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Poker">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a2027;
+    --panel2: #232b34;
+    --text: #e4e8ec;
+    --muted: #8a939d;
+    --hero: #ffd24a;
+    --success: #5dd39e;
+    --danger: #ff6b6b;
+    --info: #5db3ff;
+    --card-bg: #f4f4f4;
+    --card-red: #d63a3a;
+    --card-black: #1a1a1a;
+    --fold: #6c757d;
+    --call: #4a9eff;
+    --raise: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+    min-height: 100vh;
+    padding: 12px;
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .app {
+    max-width: 540px;
+    width: 100%;
+  }
+  @media (min-width: 900px) {
+    .app {
+      max-width: 1080px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      grid-template-areas:
+        "header  history"
+        "stats   history"
+        "modes   history"
+        "play    history"
+        "footer  history";
+      column-gap: 18px;
+      align-items: start;
+    }
+    .header  { grid-area: header; }
+    .stats   { grid-area: stats; }
+    .mode-wrap { grid-area: modes; }
+    .play-area { grid-area: play; }
+    .history-section { grid-area: history; margin-bottom: 0; position: sticky; top: 12px; }
+    .footer  { grid-area: footer; }
+    .history-list { max-height: calc(100vh - 100px); }
+  }
+
+  /* Stats */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 8px;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .stat .label { color: var(--muted); font-size: 10px; }
+  .stat .value { font-size: 16px; font-weight: 800; margin-top: 2px; }
+  .stat.streak .value { color: var(--hero); }
+  .stat.accuracy .value { color: var(--success); }
+
+  /* Position badge big */
+  .position-display {
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  .position-badge {
+    display: inline-block;
+    padding: 8px 22px;
+    border-radius: 12px;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  }
+  .pos-BTN { background: #ffd24a; color: #1a1a1a; }
+  .pos-CO  { background: #5dd39e; color: #1a1a1a; }
+  .pos-MP  { background: #5db3ff; color: #fff; }
+  .pos-UTG { background: #9c8aff; color: #fff; }
+  .pos-SB  { background: #ff8a3d; color: #fff; }
+  .pos-BB  { background: #ff5d8f; color: #fff; }
+  .position-display .sub {
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 4px;
+  }
+
+  /* Cards */
+  .hole {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin: 14px 0;
+  }
+  .card {
+    background: var(--card-bg);
+    color: var(--card-black);
+    border-radius: 10px;
+    padding: 12px 10px;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 64px;
+    min-height: 92px;
+    user-select: none;
+  }
+  .card .rank { font-size: 36px; }
+  .card .suit { font-size: 28px; line-height: 1; margin-top: 4px; }
+  .card.red { color: var(--card-red); }
+  .hand-label {
+    text-align: center;
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 4px;
+    letter-spacing: 2px;
+  }
+
+  /* Scenario */
+  .scenario {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.5;
+  }
+  .scenario .label { color: var(--text); font-weight: 700; }
+  .scenario .raiser { color: var(--raise); font-weight: 700; }
+  .scenario .position-ref { color: var(--info); font-weight: 700; }
+
+  /* Action buttons */
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .btn {
+    border: none;
+    border-radius: 12px;
+    padding: 20px 8px;
+    font-size: 16px;
+    font-weight: 800;
+    color: #fff;
+    cursor: pointer;
+    transition: filter 0.1s, transform 0.05s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    position: relative;
+    letter-spacing: 1px;
+    user-select: none;
+  }
+  .btn:hover:not(:disabled) { filter: brightness(1.15); }
+  .btn:active:not(:disabled) { transform: scale(0.96); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-fold { background: var(--fold); }
+  .btn-call { background: var(--call); }
+  .btn-raise { background: var(--raise); }
+  .btn .ico { font-size: 22px; }
+  .btn .lbl { font-size: 14px; letter-spacing: 1px; }
+  .btn .key {
+    position: absolute; top: 4px; right: 8px;
+    font-size: 10px; opacity: 0.6;
+    background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 4px;
+  }
+  .btn.correct { box-shadow: 0 0 0 3px var(--success), 0 0 20px var(--success); animation: pop 0.3s; }
+  .btn.wrong { box-shadow: 0 0 0 3px var(--danger), 0 0 20px var(--danger); animation: shake 0.4s; }
+  @keyframes pop { 0%{transform: scale(1)} 50%{transform: scale(1.08)} 100%{transform: scale(1)} }
+  @keyframes shake { 0%,100%{transform: translateX(0)} 25%{transform: translateX(-6px)} 75%{transform: translateX(6px)} }
+
+  /* Feedback */
+  .feedback {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    min-height: 70px;
+    line-height: 1.5;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .feedback.correct { border-left: 4px solid var(--success); }
+  .feedback.wrong { border-left: 4px solid var(--danger); }
+  .feedback .verdict {
+    font-size: 16px;
+    font-weight: 800;
+  }
+  .feedback .verdict.correct { color: var(--success); }
+  .feedback .verdict.wrong { color: var(--danger); }
+  .feedback .reason {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .feedback .anchor {
+    color: var(--hero);
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+  .feedback.empty { display: none; }
+
+  /* History log */
+  .history-section {
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+  .history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--panel2);
+  }
+  .history-header .small-btn {
+    padding: 3px 8px;
+    font-size: 10px;
+  }
+  .history-list {
+    max-height: 280px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .history-list:empty::after {
+    content: 'まだ解答がありません';
+    color: var(--muted);
+    font-style: italic;
+    display: block;
+    text-align: center;
+    padding: 12px 0;
+  }
+  .hist-entry {
+    padding: 6px 8px;
+    margin-bottom: 5px;
+    border-radius: 6px;
+    background: var(--panel2);
+    border-left: 3px solid transparent;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .hist-entry.correct { border-left-color: var(--success); }
+  .hist-entry.wrong { border-left-color: var(--danger); }
+  .hist-entry .top-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 700;
+    font-size: 12px;
+  }
+  .hist-entry .pos-tag {
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+  }
+  .hist-entry .hand-tag {
+    color: var(--hero);
+    font-family: ui-monospace, 'SF Mono', monospace;
+    font-size: 13px;
+  }
+  .hist-entry .verdict-mini {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .hist-entry.correct .verdict-mini { color: var(--success); }
+  .hist-entry.wrong .verdict-mini { color: var(--danger); }
+  .hist-entry .scenario-mini {
+    color: var(--muted);
+    font-size: 10px;
+  }
+  .hist-entry .anchor-mini {
+    color: var(--hero);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  /* Footer */
+  .footer {
+    display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .small-btn {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--panel2);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .small-btn:hover { border-color: var(--info); }
+  .small-btn.danger { color: var(--danger); }
+  .small-btn.active { background: var(--info); color: #fff; border-color: var(--info); }
+
+  /* Position-specific filter buttons */
+  .pos-toggle .small-btn { font-weight: 700; }
+  .pos-utg-btn.active { background: #9c8aff; color: #fff; border-color: #9c8aff; }
+  .pos-mp-btn.active  { background: #5db3ff; color: #fff; border-color: #5db3ff; }
+  .pos-co-btn.active  { background: #5dd39e; color: #1a1a1a; border-color: #5dd39e; }
+  .pos-btn-btn.active { background: #ffd24a; color: #1a1a1a; border-color: #ffd24a; }
+  .pos-sb-btn.active  { background: #ff8a3d; color: #fff; border-color: #ff8a3d; }
+  .pos-bb-btn.active  { background: #ff5d8f; color: #fff; border-color: #ff5d8f; }
+
+  /* Mode toggle */
+  .mode-toggle {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .mode-toggle .small-btn {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+
+  /* Header */
+  .header {
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .header .title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--hero);
+  }
+  .header .sub {
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  @media (max-width: 480px) {
+    body { padding: 8px; }
+    .card { min-width: 54px; min-height: 80px; padding: 10px 8px; }
+    .card .rank { font-size: 30px; }
+    .card .suit { font-size: 22px; }
+    .position-badge { font-size: 18px; padding: 6px 16px; }
+    .btn { padding: 16px 6px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="title">🎴 Preflop Trainer</div>
+    <div class="sub">レンジ早押し練習 — F/C/R で即答</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">問題</div><div class="value" id="st-num">0</div></div>
+    <div class="stat accuracy"><div class="label">正解率</div><div class="value" id="st-acc">—</div></div>
+    <div class="stat streak"><div class="label">連続</div><div class="value" id="st-streak">0</div></div>
+    <div class="stat"><div class="label">最高連続</div><div class="value" id="st-best">0</div></div>
+  </div>
+
+  <div class="mode-wrap">
+  <div class="mode-toggle">
+    <button class="small-btn active" data-scope="all">全シーン</button>
+    <button class="small-btn" data-scope="firstin">First-in のみ</button>
+    <button class="small-btn" data-scope="vsraise">vs Raise のみ</button>
+    <button class="small-btn" data-scope="bb">BB のみ</button>
+  </div>
+
+  <div class="mode-toggle pos-toggle">
+    <button class="small-btn pos-all active" data-pos="all">全ポジ</button>
+    <button class="small-btn pos-utg-btn" data-pos="UTG">UTG</button>
+    <button class="small-btn pos-mp-btn"  data-pos="MP">MP</button>
+    <button class="small-btn pos-co-btn"  data-pos="CO">CO</button>
+    <button class="small-btn pos-btn-btn" data-pos="BTN">BTN</button>
+    <button class="small-btn pos-sb-btn"  data-pos="SB">SB</button>
+    <button class="small-btn pos-bb-btn"  data-pos="BB">BB</button>
+  </div>
+  </div>
+
+  <div class="play-area">
+
+  <div class="position-display">
+    <span class="position-badge" id="pos-badge">—</span>
+    <div class="sub" id="pos-desc">—</div>
+  </div>
+
+  <div class="hand-label" id="hand-label">—</div>
+  <div class="hole" id="hole-cards"></div>
+
+  <div class="scenario" id="scenario">—</div>
+
+  <div class="actions">
+    <button class="btn btn-fold" data-action="fold">
+      <span class="key">F</span>
+      <span class="ico">✕</span>
+      <span class="lbl">FOLD</span>
+    </button>
+    <button class="btn btn-call" data-action="call">
+      <span class="key">C</span>
+      <span class="ico">✓</span>
+      <span class="lbl" id="call-lbl">CALL</span>
+    </button>
+    <button class="btn btn-raise" data-action="raise">
+      <span class="key">R</span>
+      <span class="ico">↑</span>
+      <span class="lbl">RAISE</span>
+    </button>
+  </div>
+
+  <div class="feedback empty" id="feedback"></div>
+  </div>
+
+  <div class="history-section">
+    <div class="history-header">
+      <span>📜 解答ログ</span>
+      <button class="small-btn" id="btn-clear-log">クリア</button>
+    </div>
+    <div class="history-list" id="history-list"></div>
+  </div>
+
+  <div class="footer">
+    <button class="small-btn" id="btn-skip">⏭ 次へ (Space)</button>
+    <button class="small-btn" id="btn-export">📥 エクスポート</button>
+    <button class="small-btn danger" id="btn-reset">🔄 統計リセット</button>
+    <a class="small-btn" href="index.html" style="text-decoration: none;">🏠 メニュー</a>
+  </div>
+
+</div>
+
+<script>
+// ──────────────────────────────────────────────
+// 範囲判定エンジン（呂さんの「気持ち広げ」流派ベース）
+// rank: 0=2, 12=A
+// ──────────────────────────────────────────────
+
+const RANKS = '23456789TJQKA';
+const SUITS = ['s', 'h', 'd', 'c'];
+const SUIT_GLYPH = { s: '♠', h: '♥', d: '♦', c: '♣' };
+const SUIT_RED = { s: false, h: true, d: true, c: false };
+
+function makeHand() {
+  // Generate a random 169-equivalent hand by sampling 2 cards from deck
+  let r1 = Math.floor(Math.random() * 13);
+  let r2 = Math.floor(Math.random() * 13);
+  let s1 = Math.floor(Math.random() * 4);
+  let s2 = Math.floor(Math.random() * 4);
+  // If same card, redo
+  while (r1 === r2 && s1 === s2) {
+    s2 = Math.floor(Math.random() * 4);
+  }
+  return {
+    cards: [
+      { rank: r1, suit: SUITS[s1] },
+      { rank: r2, suit: SUITS[s2] },
+    ],
+    high: Math.max(r1, r2),
+    low: Math.min(r1, r2),
+    pair: r1 === r2,
+    suited: s1 === s2,
+  };
+}
+
+function handLabel(h) {
+  if (h.pair) return RANKS[h.high] + RANKS[h.high];
+  return RANKS[h.high] + RANKS[h.low] + (h.suited ? 's' : 'o');
+}
+
+// Open range判定（GTO Wizard / PioSolver 6-max 100BB standard binary化版）
+function inOpenRange(pos, h) {
+  const { high, low, pair, suited } = h;
+  if (pos === 'UTG') {
+    // 約17% open
+    if (pair) return high >= 4; // 66+（22-55 は fold）
+    if (high === 12 && suited) {
+      if (low >= 6) return true; // A8s+
+      if (low === 3 || low === 2) return true; // A5s, A4s (ホイール狙い)
+      return false;
+    }
+    if (high === 12 && !suited) return low >= 9; // AJo+
+    if (high === 11 && suited) return low >= 7; // K9s+
+    if (high === 11 && !suited) return low === 10; // KQo
+    if (high === 10 && suited) return low >= 8; // QTs+
+    if (high === 9 && suited && low === 8) return true; // JTs
+    if (high === 8 && suited && low === 7) return true; // T9s
+    if (high === 7 && suited && low === 6) return true; // 98s
+    return false;
+  }
+  if (pos === 'MP') {
+    // 約22% open
+    if (inOpenRange('UTG', h)) return true;
+    if (pair) return true; // 22-55 追加
+    if (high === 12 && suited) return true; // A2s-A7s 追加（全Aスーテッド）
+    if (high === 12 && !suited) return low >= 8; // ATo+
+    if (high === 11 && !suited) return low >= 9; // KJo+
+    if (high === 9 && suited && low === 7) return true; // J9s
+    if (high === 6 && suited && low === 5) return true; // 87s
+    return false;
+  }
+  if (pos === 'CO') {
+    // 約28% open
+    if (inOpenRange('MP', h)) return true;
+    if (high === 12 && !suited) return low >= 6; // A8o+
+    if (high === 11 && suited) return low >= 4; // K6s+
+    if (high === 11 && !suited) return low >= 8; // KTo+
+    if (high === 10 && suited) return low >= 6; // Q8s+
+    if (high === 10 && !suited) return low === 9; // QJo
+    if (high === 9 && suited) return low >= 5; // J7s+
+    if (high === 9 && !suited) return low === 8; // JTo
+    if (high === 8 && suited) return low >= 5; // T7s+
+    if (high === 8 && !suited) return low === 7; // T9o
+    if (high === 7 && suited) return low >= 4; // 96s+
+    if (high === 6 && suited) return low >= 4; // 86s+
+    if (high === 5 && suited) return low >= 3; // 75s+
+    if (high === 4 && suited) return low >= 2; // 64s+
+    if (high === 3 && suited) return low >= 2; // 54s
+    return false;
+  }
+  if (pos === 'BTN') {
+    // 約47% open
+    if (pair) return true;
+    if (high === 12) return true; // A any
+    if (high === 11) {
+      if (suited) return true; // K2s+
+      return low >= 3; // K5o+
+    }
+    if (high === 10) {
+      if (suited) return true; // Q2s+
+      return low >= 6; // Q8o+
+    }
+    if (high === 9) {
+      if (suited) return low >= 2; // J4s+
+      return low >= 6; // J8o+
+    }
+    if (high === 8) {
+      if (suited) return low >= 4; // T6s+
+      return low >= 6; // T8o+
+    }
+    if (high === 7 && suited) return low >= 3; // 95s+
+    if (high === 6 && suited) return low >= 2; // 84s+
+    if (high === 5 && suited) return low >= 1; // 73s+
+    if (high === 4 && suited) return low >= 1; // 63s+
+    if (high === 3 && suited) return low >= 1; // 53s+
+    if (high === 2 && suited && low === 1) return true; // 43s
+    return false;
+  }
+  if (pos === 'SB') {
+    // 約40-45% open（HU vs BB、raise-only）
+    if (pair) return true;
+    if (high === 12) return true; // A any
+    if (high === 11) {
+      if (suited) return true; // K2s+
+      return low >= 3; // K5o+
+    }
+    if (high === 10) {
+      if (suited) return low >= 2; // Q4s+
+      return low >= 7; // Q9o+
+    }
+    if (high === 9) {
+      if (suited) return low >= 5; // J7s+
+      return low >= 7; // J9o+
+    }
+    if (high === 8) {
+      if (suited) return low >= 6; // T8s+
+      return low === 7; // T9o
+    }
+    if (high === 7 && suited) return low >= 4; // 96s+
+    if (high === 6 && suited) return low >= 4; // 86s+
+    if (high === 5 && suited) return low >= 3; // 75s+
+    if (high === 4 && suited) return low >= 2; // 64s+
+    if (high === 3 && suited) return low >= 2; // 54s
+    return false;
+  }
+  return false;
+}
+
+// 3-bet判定 (vs raise)
+function in3betRange(pos, h, fromPos) {
+  const { high, low, pair, suited } = h;
+  // Premium: AA-99 / AKs / AKo / AQs はどこからでも 3-bet
+  if (pair && high >= 7) return true; // 99+
+  if (high === 12 && low === 11) return true; // AK
+  if (high === 12 && low === 10 && suited) return true; // AQs
+  // SB は OOP なので 3-bet or fold (linear)
+  if (pos === 'SB') return false; // 上の条件外はフォールド
+  // BB は wider — handled separately
+  return false;
+}
+
+// vs raise call range (flat call)
+function inCallVsRaiseRange(pos, h, fromPos) {
+  const { high, low, pair, suited } = h;
+  // SB は基本 3bet or fold, flat call は弱い
+  if (pos === 'SB') return false;
+  // 3-bet 範囲を call にしない
+  if (in3betRange(pos, h, fromPos)) return false;
+  // Pairs (smaller) — fromPos が早いほど絞る
+  if (pair) {
+    if (high >= 4) return true; // 66+ をフラットコール
+    return false;
+  }
+  // Suited broadways
+  if (high === 12 && suited && low >= 7) return true; // ATs+
+  if (high === 11 && suited && low >= 8) return true; // KTs+
+  if (high === 10 && suited && low >= 8) return true; // QTs+
+  if (high === 9 && suited && low >= 7) return true; // JTs (J9s薄め)
+  // Suited connectors (depends on fromPos)
+  if (suited && high - low === 1 && low >= 4) return true; // 65s+ から
+  // Suited gappers — BTN ならOK
+  if (pos === 'BTN' && suited && high - low === 2 && low >= 4) return true;
+  // AQo/AJo/KQo
+  if (high === 12 && low >= 9) return true; // AJo+
+  if (high === 11 && low === 10) return true; // KQo
+  return false;
+}
+
+// BB defense vs open
+function inBBDefenseRange(h, fromPos) {
+  const { high, low, pair, suited } = h;
+  // 3-bet range (polarized + linear mix)
+  // Premium 3-bet
+  if (pair && high >= 7) return 'raise'; // 99+
+  if (high === 12 && low === 11) return 'raise'; // AK
+  if (high === 12 && low === 10 && suited) return 'raise'; // AQs
+  // vs SB ouvert は 3-bet 多め
+  if (fromPos === 'SB') {
+    if (pair) return 'raise';
+    if (high === 12 && suited && low >= 7) return 'raise';
+  }
+
+  // Call range — fromPos によって幅が違う
+  let defendBreadth;
+  if (fromPos === 'UTG') defendBreadth = 'narrow';
+  else if (fromPos === 'MP') defendBreadth = 'narrow';
+  else if (fromPos === 'CO') defendBreadth = 'medium';
+  else if (fromPos === 'BTN') defendBreadth = 'wide';
+  else if (fromPos === 'SB') defendBreadth = 'verywide';
+  else defendBreadth = 'medium';
+
+  if (defendBreadth === 'narrow') {
+    // vs UTG/MP: プレミアム+スーテッドAブロードウェイ+ペア
+    if (pair) return 'call';
+    if (high === 12) {
+      if (suited && low >= 7) return 'call'; // ATs+
+      if (low >= 9) return 'call'; // AJo+
+      return 'fold';
+    }
+    if (high === 11 && suited && low >= 8) return 'call'; // KTs+
+    if (high === 11 && low === 10) return 'call'; // KQo
+    if (high === 10 && suited && low >= 8) return 'call'; // QTs+
+    if (high === 9 && suited && low === 8) return 'call'; // JTs
+    return 'fold';
+  }
+  if (defendBreadth === 'medium') {
+    // vs CO
+    if (pair) return 'call';
+    if (high === 12) {
+      if (suited) return 'call';
+      if (low >= 7) return 'call'; // A9o+
+      return 'fold';
+    }
+    if (high === 11 && suited) return 'call'; // K2s+
+    if (high === 11 && low >= 8) return 'call'; // KTo+
+    if (high === 10 && suited && low >= 5) return 'call'; // Q7s+
+    if (high === 10 && low >= 8) return 'call'; // QTo+
+    if (high === 9 && suited && low >= 5) return 'call'; // J7s+
+    if (high === 9 && low === 8) return 'call'; // JTo
+    if (high === 8 && suited && low >= 5) return 'call'; // T7s+
+    if (high === 7 && suited && low >= 4) return 'call'; // 96s+
+    if (suited && high - low === 1 && low >= 3) return 'call'; // 54s+
+    return 'fold';
+  }
+  if (defendBreadth === 'wide' || defendBreadth === 'verywide') {
+    // vs BTN/SB: 何でも defend
+    if (pair) return 'call';
+    if (high === 12) return 'call';
+    if (high === 11) {
+      if (suited) return 'call';
+      if (low >= 3) return 'call'; // K5o+
+      return 'fold';
+    }
+    if (high === 10) {
+      if (suited) return 'call';
+      if (low >= 5) return 'call'; // Q7o+
+      return 'fold';
+    }
+    if (high === 9) {
+      if (suited) return 'call';
+      if (low >= 5) return 'call'; // J7o+
+      return 'fold';
+    }
+    if (high === 8) {
+      if (suited) return 'call';
+      if (low >= 5) return 'call'; // T7o+
+      return 'fold';
+    }
+    if (high === 7) {
+      if (suited) return 'call';
+      if (low >= 5) return 'call'; // 97o+
+      return 'fold';
+    }
+    if (high === 6 && suited) return 'call';
+    if (high === 5 && suited) return 'call';
+    if (high === 4 && suited && low >= 2) return 'call'; // 64s+
+    if (suited && high - low === 1) return 'call';
+    return 'fold';
+  }
+  return 'fold';
+}
+
+// ──────────────────────────────────────────────
+// Scenario generation
+// ──────────────────────────────────────────────
+
+const POSITIONS_OPEN = ['UTG', 'MP', 'CO', 'BTN', 'SB'];
+
+function generateScenario(scope = 'all', posFilter = 'all') {
+  const hand = makeHand();
+  const all = ['UTG','MP','CO','BTN','SB'];
+
+  // BB位置が選ばれている場合は必ず BB defense
+  if (posFilter === 'BB') {
+    const fromPos = all[Math.floor(Math.random() * all.length)];
+    const correct = inBBDefenseRange(hand, fromPos);
+    return {
+      kind: 'bb', pos: 'BB', hand, fromPos,
+      scenarioText: `<span class="raiser">${fromPos}</span> がレイズ → あなたは <span class="position-ref">BB</span>`,
+      correct,
+      validOptions: ['fold', 'call', 'raise'],
+    };
+  }
+
+  // ポジション固定時、可能な kind を絞る
+  let availableKinds = ['firstin', 'vsraise', 'bb'];
+  if (posFilter !== 'all') {
+    // UTGは vs raise シーン無し（最初のアクター）
+    availableKinds = ['firstin'];
+    if (posFilter !== 'UTG') availableKinds.push('vsraise');
+  }
+  // scope filter で kind を制約
+  if (scope === 'firstin') availableKinds = availableKinds.filter(k => k === 'firstin');
+  if (scope === 'vsraise') availableKinds = availableKinds.filter(k => k === 'vsraise');
+  if (scope === 'bb') availableKinds = ['bb'];
+
+  if (availableKinds.length === 0) {
+    // posFilter と scope の組み合わせが不可能な場合（例: UTG + vsraise）→ first-in にフォールバック
+    availableKinds = ['firstin'];
+  }
+
+  // kind 選択
+  let kind;
+  if (availableKinds.length === 1) {
+    kind = availableKinds[0];
+  } else {
+    // 重み付け: posFilter='all' のときは bb 少なめ
+    const r = Math.random();
+    if (posFilter === 'all') {
+      if (r < 0.5 && availableKinds.includes('firstin')) kind = 'firstin';
+      else if (r < 0.8 && availableKinds.includes('vsraise')) kind = 'vsraise';
+      else if (availableKinds.includes('bb')) kind = 'bb';
+      else kind = availableKinds[0];
+    } else {
+      kind = availableKinds[Math.floor(Math.random() * availableKinds.length)];
+    }
+  }
+
+  if (kind === 'firstin') {
+    let pos;
+    if (posFilter !== 'all' && posFilter !== 'BB') pos = posFilter;
+    else pos = POSITIONS_OPEN[Math.floor(Math.random() * POSITIONS_OPEN.length)];
+    const correct = inOpenRange(pos, hand) ? 'raise' : 'fold';
+    return {
+      kind, pos, hand,
+      fromPos: null,
+      scenarioText: `全員フォールド、あなたが最初のアクション`,
+      correct,
+      validOptions: ['fold', 'raise'],
+    };
+  }
+  if (kind === 'vsraise') {
+    let pos, fromPos;
+    if (posFilter !== 'all' && posFilter !== 'BB' && posFilter !== 'UTG') {
+      pos = posFilter;
+      // Pick a raiser earlier than hero
+      const heroIdx = all.indexOf(pos);
+      const earlier = all.slice(0, heroIdx);
+      fromPos = earlier[Math.floor(Math.random() * earlier.length)];
+    } else {
+      const fi = Math.floor(Math.random() * 4); // UTG..BTN
+      fromPos = all[fi];
+      const validHero = all.slice(fi + 1);
+      pos = validHero[Math.floor(Math.random() * validHero.length)];
+    }
+    let correct;
+    if (in3betRange(pos, hand, fromPos)) correct = 'raise';
+    else if (inCallVsRaiseRange(pos, hand, fromPos)) correct = 'call';
+    else correct = 'fold';
+    return {
+      kind, pos, hand, fromPos,
+      scenarioText: `<span class="raiser">${fromPos}</span> がレイズ → あなたは <span class="position-ref">${pos}</span>`,
+      correct,
+      validOptions: ['fold', 'call', 'raise'],
+    };
+  }
+  // BB defense
+  const fromPos = all[Math.floor(Math.random() * all.length)];
+  const correct = inBBDefenseRange(hand, fromPos);
+  return {
+    kind: 'bb',
+    pos: 'BB',
+    hand,
+    fromPos,
+    scenarioText: `<span class="raiser">${fromPos}</span> がレイズ → あなたは <span class="position-ref">BB</span>`,
+    correct,
+    validOptions: ['fold', 'call', 'raise'],
+  };
+}
+
+// ──────────────────────────────────────────────
+// Reasoning text
+// ──────────────────────────────────────────────
+
+function getReasoning(scenario, userAction) {
+  const { pos, hand, fromPos, kind, correct } = scenario;
+  const label = handLabel(hand);
+  const { high, low, pair, suited } = hand;
+
+  if (kind === 'firstin') {
+    if (correct === 'raise') {
+      const anchor = getOpenAnchor(pos, hand);
+      return { anchor, reason: `${pos} のオープンレンジ内` };
+    } else {
+      const anchor = getFoldReason(pos, hand);
+      return { anchor, reason: `${pos} のオープンレンジ外` };
+    }
+  }
+  if (kind === 'vsraise') {
+    if (correct === 'raise') {
+      return { anchor: `vs ${fromPos} raise → 3-bet 範囲`, reason: `プレミアム (99+/AK/AQs相当)` };
+    }
+    if (correct === 'call') {
+      return { anchor: `vs ${fromPos} raise → コールド・コール範囲`, reason: `フラットでフロップを見にいく` };
+    }
+    return {
+      anchor: pos === 'SB' ? `SB は OOP → "3-bet or fold"` : `vs ${fromPos} raise レンジ外`,
+      reason: pos === 'SB' ? `SBは flat call 弱い、降りるが正解` : `相手レンジに対し弱すぎ`,
+    };
+  }
+  // BB
+  if (correct === 'raise') {
+    return { anchor: `BB defense → 3-bet 範囲（プレミアム）`, reason: `99+ / AK / AQs 級` };
+  }
+  if (correct === 'call') {
+    const width = (fromPos === 'BTN' || fromPos === 'SB') ? '広く守る (45-60%)' :
+                  (fromPos === 'CO') ? '中広で守る (30-35%)' : '絞って守る (20%)';
+    return { anchor: `BB vs ${fromPos} raise → ${width}`, reason: `ポット・オッズ良いので defend` };
+  }
+  return { anchor: `BB defense レンジ外`, reason: `${fromPos} のレンジに対し雑魚ハンド` };
+}
+
+function getOpenAnchor(pos, h) {
+  const { high, low, pair, suited } = h;
+  if (pair) {
+    if (pos === 'UTG' && high < 4) return `（GTOではローペアは UTG fold だが今 open: 例外）`;
+    if (pos === 'UTG') return `ペア 66+ は UTG open（${RANKS[high]}${RANKS[high]}）`;
+    return `ペアは ${pos} で常に open（${RANKS[high]}${RANKS[high]}）`;
+  }
+  if (high === 12 && suited) {
+    if (pos === 'UTG') return `A8s+ / A5s / A4s（UTG・ホイール狙い込み）`;
+    return `A行スーテッド全部（${pos}）`;
+  }
+  if (high === 12 && !suited) {
+    if (pos === 'UTG') return `A行オフスートは AJo+ のみ`;
+    if (pos === 'MP') return `A行オフは MP では ATo+`;
+    if (pos === 'CO') return `A行オフは CO では A8o+`;
+    return `A行オフスート（${pos}）`;
+  }
+  if (high === 11 && suited) {
+    if (pos === 'UTG') return `K行スーテッドは UTG では K9s+`;
+    if (pos === 'MP') return `K行スーテッドは MP で K9s+`;
+    if (pos === 'CO') return `K行スーテッドは CO で K6s+`;
+    return `K行スーテッド広く（${pos}）`;
+  }
+  if (high === 11 && !suited) {
+    if (pos === 'UTG') return `K行オフは UTG で KQo のみ`;
+    if (pos === 'MP') return `K行オフは MP で KJo+`;
+    if (pos === 'CO') return `K行オフは CO で KTo+`;
+    return `K行オフ広め（${pos}）`;
+  }
+  if (high === 10 && suited) return `Q行スーテッド（${pos}）`;
+  if (suited && high - low === 1) return `スーテッドコネクター（${pos}）`;
+  return `${pos} のレンジ内`;
+}
+
+function getFoldReason(pos, h) {
+  const { high, low, pair, suited } = h;
+  if (pos === 'UTG') {
+    if (pair && high < 4) return `GTO基準: UTG では 22-55 は fold（66+ から open）`;
+    if (!pair && high === 12 && !suited && low < 9) return `Aオフは UTG で AJo が下限`;
+    if (!pair && high === 12 && suited && low < 6 && low !== 2 && low !== 3) return `A行スーテッドは UTG で A8s 境界（A5s/A4s 例外）`;
+    if (!pair && high === 11 && !suited && low !== 10) return `K行オフは UTG で KQo のみ`;
+    if (!pair && high === 11 && suited && low < 7) return `K行スーテッドは UTG で K9s 境界`;
+    if (!pair && high === 10 && suited && low < 8) return `Q行スーテッドは UTG で QTs 境界`;
+    return `UTG のレンジ外、降りる`;
+  }
+  if (pos === 'MP') {
+    if (!pair && high === 12 && !suited && low < 8) return `Aオフは MP で ATo 下限`;
+    if (!pair && high === 11 && !suited && low < 9) return `Kオフは MP で KJo 下限`;
+    return `MP のレンジ外、降りる`;
+  }
+  if (pos === 'CO') {
+    if (!pair && high === 12 && !suited && low < 6) return `Aオフは CO で A8o 下限`;
+    return `CO のレンジ外、降りる`;
+  }
+  if (pos === 'BTN') return `BTN は広いがこれは外`;
+  if (pos === 'SB') return `SB は HU 広めだがこれは fold`;
+  return `${pos} のレンジ外、降りる`;
+}
+
+// ──────────────────────────────────────────────
+// State
+// ──────────────────────────────────────────────
+
+const state = {
+  num: 0,
+  correct: 0,
+  streak: 0,
+  bestStreak: 0,
+  scope: 'all',
+  posFilter: 'all',
+  current: null,
+  locked: false,
+  history: [],
+};
+
+const $ = (id) => document.getElementById(id);
+
+function renderScenario() {
+  state.current = generateScenario(state.scope, state.posFilter);
+  state.locked = false;
+  const s = state.current;
+  $('pos-badge').className = 'position-badge pos-' + s.pos;
+  $('pos-badge').textContent = s.pos;
+  $('pos-desc').textContent = positionDesc(s.pos);
+  $('hand-label').textContent = handLabel(s.hand);
+  $('hole-cards').innerHTML = s.hand.cards.map(c => {
+    const red = SUIT_RED[c.suit];
+    return `<div class="card${red ? ' red' : ''}"><div class="rank">${RANKS[c.rank]}</div><div class="suit">${SUIT_GLYPH[c.suit]}</div></div>`;
+  }).join('');
+  $('scenario').innerHTML = s.scenarioText;
+
+  // Hide CALL button when not applicable (firstin)
+  const isFirstin = s.kind === 'firstin';
+  $('call-lbl').textContent = isFirstin ? '— —' : 'CALL';
+  document.querySelector('[data-action="call"]').style.opacity = isFirstin ? '0.35' : '1';
+
+  // Reset button states
+  document.querySelectorAll('.btn').forEach(b => {
+    b.classList.remove('correct', 'wrong');
+    b.disabled = false;
+  });
+  $('feedback').className = 'feedback empty';
+  $('feedback').innerHTML = '';
+}
+
+function positionDesc(pos) {
+  return {
+    UTG: 'アンダー・ザ・ガン（最弱ポジ）',
+    MP: 'ミドルポジション',
+    CO: 'カットオフ（攻めポジ）',
+    BTN: 'ボタン（最強ポジ）',
+    SB: 'スモールブラインド（HU化）',
+    BB: 'ビッグブラインド（ディフェンス）',
+  }[pos] || '';
+}
+
+function answer(action) {
+  if (state.locked) return;
+  const s = state.current;
+  if (!s) return;
+  state.locked = true;
+  const isCorrect = action === s.correct;
+  state.num++;
+  if (isCorrect) {
+    state.correct++;
+    state.streak++;
+    if (state.streak > state.bestStreak) state.bestStreak = state.streak;
+  } else {
+    state.streak = 0;
+  }
+  const { anchor, reason } = getReasoning(s, action);
+  // Save to history
+  state.history.unshift({
+    num: state.num,
+    pos: s.pos,
+    hand: handLabel(s.hand),
+    fromPos: s.fromPos,
+    kind: s.kind,
+    user: action,
+    correct: s.correct,
+    isCorrect,
+    anchor,
+    reason,
+  });
+  if (state.history.length > 200) state.history.pop();
+  updateStats();
+  renderHistory();
+  showFeedback(action, isCorrect, anchor, reason);
+  // Highlight buttons
+  document.querySelectorAll('.btn').forEach(b => {
+    if (b.dataset.action === s.correct) b.classList.add('correct');
+    if (b.dataset.action === action && !isCorrect) b.classList.add('wrong');
+    b.disabled = true;
+  });
+  // Auto-advance
+  setTimeout(nextQuestion, isCorrect ? 700 : 1700);
+}
+
+function showFeedback(action, isCorrect, anchor, reason) {
+  const s = state.current;
+  const fb = $('feedback');
+  fb.className = 'feedback ' + (isCorrect ? 'correct' : 'wrong');
+  fb.innerHTML = `
+    <div class="verdict ${isCorrect ? 'correct' : 'wrong'}">
+      ${isCorrect ? '✓ 正解' : `✗ 不正解 — 正解: ${actionLabel(s.correct)}`}
+    </div>
+    <div class="reason">${reason}</div>
+    <div class="anchor">📌 ${anchor}</div>
+  `;
+}
+
+function renderHistory() {
+  const list = $('history-list');
+  list.innerHTML = state.history.map(h => {
+    const scenario = h.kind === 'firstin' ? 'first-in' :
+                     h.kind === 'vsraise' ? `vs ${h.fromPos}` :
+                     `BB vs ${h.fromPos}`;
+    return `
+      <div class="hist-entry ${h.isCorrect ? 'correct' : 'wrong'}">
+        <div class="top-line">
+          <span class="pos-tag pos-${h.pos}" style="background:${posColor(h.pos)};color:${posTextColor(h.pos)};">${h.pos}</span>
+          <span class="hand-tag">${h.hand}</span>
+          <span class="scenario-mini">${scenario}</span>
+          <span class="verdict-mini">${h.isCorrect ? '✓' : '✗'} ${actionLabel(h.user)}${!h.isCorrect ? ` → 正解 ${actionLabel(h.correct)}` : ''}</span>
+        </div>
+        <div class="anchor-mini">📌 ${h.anchor}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function posColor(p) {
+  return {
+    UTG: '#9c8aff', MP: '#5db3ff', CO: '#5dd39e',
+    BTN: '#ffd24a', SB: '#ff8a3d', BB: '#ff5d8f',
+  }[p] || '#5db3ff';
+}
+function posTextColor(p) {
+  return (p === 'BTN' || p === 'CO') ? '#1a1a1a' : '#fff';
+}
+
+function actionLabel(a) { return { fold: 'FOLD', call: 'CALL', raise: 'RAISE' }[a] || a; }
+
+function updateStats() {
+  $('st-num').textContent = state.num;
+  $('st-acc').textContent = state.num === 0 ? '—' : Math.round(state.correct * 100 / state.num) + '%';
+  $('st-streak').textContent = state.streak;
+  $('st-best').textContent = state.bestStreak;
+  // Persist
+  localStorage.setItem('preflop_practice_stats', JSON.stringify({
+    num: state.num, correct: state.correct, bestStreak: state.bestStreak,
+  }));
+  localStorage.setItem('preflop_practice_history', JSON.stringify(state.history.slice(0, 200)));
+}
+
+function loadStats() {
+  try {
+    const s = JSON.parse(localStorage.getItem('preflop_practice_stats') || '{}');
+    state.num = s.num || 0;
+    state.correct = s.correct || 0;
+    state.bestStreak = s.bestStreak || 0;
+    state.streak = 0;
+  } catch (e) {}
+  try {
+    state.history = JSON.parse(localStorage.getItem('preflop_practice_history') || '[]');
+  } catch (e) { state.history = []; }
+  updateStats();
+  renderHistory();
+}
+
+function nextQuestion() {
+  renderScenario();
+}
+
+// ──────────────────────────────────────────────
+// Wire up
+// ──────────────────────────────────────────────
+
+document.querySelectorAll('.btn').forEach(b => {
+  b.addEventListener('click', () => {
+    if (b.dataset.action === 'call' && state.current && state.current.kind === 'firstin') {
+      // CALL is invalid for firstin — treat as wrong
+      answer('call');
+      return;
+    }
+    answer(b.dataset.action);
+  });
+});
+
+$('btn-skip').onclick = nextQuestion;
+$('btn-reset').onclick = () => {
+  if (!confirm('統計をリセットしますか？')) return;
+  state.num = 0; state.correct = 0; state.streak = 0; state.bestStreak = 0;
+  state.history = [];
+  localStorage.removeItem('preflop_practice_stats');
+  localStorage.removeItem('preflop_practice_history');
+  updateStats();
+  renderHistory();
+};
+
+$('btn-clear-log').onclick = () => {
+  if (!confirm('解答ログをクリアしますか？')) return;
+  state.history = [];
+  localStorage.removeItem('preflop_practice_history');
+  renderHistory();
+};
+
+// ──────────────────────────────────────────────
+// JSON Export（後で Claude が読んでFBできる形式）
+// ──────────────────────────────────────────────
+$('btn-export').onclick = () => {
+  if (state.num === 0) {
+    alert('エクスポートする解答がまだありません。');
+    return;
+  }
+  const now = new Date();
+  const ts = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const accuracy = state.num === 0 ? 0 : Math.round(state.correct * 1000 / state.num) / 10;
+
+  // ポジション別の集計
+  const byPos = {};
+  state.history.forEach(h => {
+    if (!byPos[h.pos]) byPos[h.pos] = { total: 0, correct: 0, mistakes: [] };
+    byPos[h.pos].total++;
+    if (h.isCorrect) byPos[h.pos].correct++;
+    else byPos[h.pos].mistakes.push({ hand: h.hand, scenario: h.kind === 'firstin' ? 'first-in' : (h.kind === 'vsraise' ? `vs ${h.fromPos}` : `BB vs ${h.fromPos}`), user: h.user, correct: h.correct, anchor: h.anchor });
+  });
+
+  const payload = {
+    schema: 'preflop_practice_export_v1',
+    exported_at: now.toISOString(),
+    range_standard: 'GTO Wizard / PioSolver 6-max NL 100BB (binary)',
+    stats: {
+      total_questions: state.num,
+      correct: state.correct,
+      accuracy_pct: accuracy,
+      best_streak: state.bestStreak,
+      current_streak: state.streak,
+    },
+    by_position: byPos,
+    history: state.history,
+  };
+
+  const json = JSON.stringify(payload, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `practice_export_${ts}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
+// Scene scope toggle (1行目)
+document.querySelectorAll('.mode-toggle:not(.pos-toggle) .small-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.mode-toggle:not(.pos-toggle) .small-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    state.scope = b.dataset.scope;
+    nextQuestion();
+  });
+});
+
+// Position filter toggle (2行目)
+document.querySelectorAll('.pos-toggle .small-btn').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.pos-toggle .small-btn').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    state.posFilter = b.dataset.pos;
+    nextQuestion();
+  });
+});
+
+// Keyboard
+document.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if (k === 'f') { e.preventDefault(); document.querySelector('[data-action="fold"]').click(); }
+  else if (k === 'c') { e.preventDefault(); document.querySelector('[data-action="call"]').click(); }
+  else if (k === 'r') { e.preventDefault(); document.querySelector('[data-action="raise"]').click(); }
+  else if (k === ' ' || k === 'enter') { e.preventDefault(); nextQuestion(); }
+});
+
+loadStats();
+renderScenario();
+</script>
+</body>
+</html>

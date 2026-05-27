@@ -1,0 +1,4 @@
+.DS_Store
+hands/
+*.output
+poker_hands_*.json

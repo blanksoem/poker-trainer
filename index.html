@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Poker Trainer — メニュー</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1e3a2f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Poker">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a2027;
+    --panel2: #232b34;
+    --text: #e4e8ec;
+    --muted: #8a939d;
+    --hero: #ffd24a;
+    --success: #5dd39e;
+    --info: #5db3ff;
+    --accent: #ff6b6b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+    min-height: 100vh;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .container { max-width: 600px; width: 100%; }
+
+  .header {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .header .title {
+    font-size: 32px;
+    font-weight: 900;
+    color: var(--hero);
+    letter-spacing: 2px;
+    margin-bottom: 6px;
+  }
+  .header .sub {
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .menu {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .mode-card {
+    background: var(--panel);
+    border: 2px solid var(--panel2);
+    border-radius: 14px;
+    padding: 24px 20px;
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--text);
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .mode-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--hero);
+    box-shadow: 0 8px 24px rgba(255,210,74,0.15);
+  }
+  .mode-card:active {
+    transform: scale(0.98);
+  }
+  .mode-card .icon {
+    font-size: 48px;
+    flex-shrink: 0;
+    width: 72px;
+    height: 72px;
+    background: var(--panel2);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .mode-card .body { flex: 1; }
+  .mode-card .name {
+    font-size: 20px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+  .mode-card .desc {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .mode-card .arrow {
+    color: var(--muted);
+    font-size: 24px;
+  }
+  .mode-card.practice .name { color: var(--success); }
+  .mode-card.live .name { color: var(--hero); }
+
+  .footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 24px;
+  }
+  .footer a {
+    color: var(--info);
+    text-decoration: none;
+    margin: 0 8px;
+  }
+  .footer a:hover { text-decoration: underline; }
+
+  .stats-mini {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 24px;
+    background: var(--panel);
+    border-radius: 10px;
+    padding: 12px;
+  }
+  .stats-mini .stat {
+    text-align: center;
+  }
+  .stats-mini .stat .label {
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .stats-mini .stat .value {
+    font-size: 16px;
+    font-weight: 700;
+    margin-top: 2px;
+  }
+
+  @media (max-width: 480px) {
+    .header .title { font-size: 24px; }
+    .mode-card { padding: 16px; gap: 12px; }
+    .mode-card .icon { font-size: 36px; width: 56px; height: 56px; border-radius: 12px; }
+    .mode-card .name { font-size: 17px; }
+    .mode-card .desc { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="title">🎴 Poker Trainer</div>
+    <div class="sub">6-max NL Hold'em — 呂さん専用</div>
+  </div>
+
+  <div class="stats-mini" id="stats-mini">
+    <div class="stat"><div class="label">実戦ハンド</div><div class="value" id="live-count">0</div></div>
+    <div class="stat"><div class="label">練習回答数</div><div class="value" id="practice-count">0</div></div>
+    <div class="stat"><div class="label">練習正解率</div><div class="value" id="practice-acc">—</div></div>
+  </div>
+
+  <div class="menu">
+    <a class="mode-card practice" href="practice.html">
+      <div class="icon">🎯</div>
+      <div class="body">
+        <div class="name">プリフロップ練習</div>
+        <div class="desc">Raise / Call / Fold をひたすら即答。レンジ判断の反射神経を磨くモード。</div>
+      </div>
+      <div class="arrow">→</div>
+    </a>
+    <a class="mode-card live" href="play.html">
+      <div class="icon">🎴</div>
+      <div class="body">
+        <div class="name">本番（実戦モード）</div>
+        <div class="desc">6-max NL Hold'em を本気でプレイ。AI 5人と対戦、履歴は JSON でエクスポート可能。</div>
+      </div>
+      <div class="arrow">→</div>
+    </a>
+
+    <div style="margin-top:14px;padding:14px 16px;background:var(--panel,#1a2027);border-radius:12px;">
+      <div style="font-size:13px;color:var(--muted,#8a939d);margin-bottom:10px;font-weight:600;">⚙️ 実戦モードの難易度（相手のタイプ構成）</div>
+      <div style="display:flex;gap:8px;" id="diff-buttons">
+        <button data-diff="easy"   style="flex:1;padding:10px 6px;border:2px solid #333;border-radius:8px;background:var(--panel2,#232b34);color:var(--text,#e4e8ec);cursor:pointer;font-size:12px;font-weight:600;line-height:1.4;">easy<br><small style="color:var(--muted,#8a939d);font-weight:400;">カモ多め</small></button>
+        <button data-diff="medium" style="flex:1;padding:10px 6px;border:2px solid #333;border-radius:8px;background:var(--panel2,#232b34);color:var(--text,#e4e8ec);cursor:pointer;font-size:12px;font-weight:600;line-height:1.4;">medium<br><small style="color:var(--muted,#8a939d);font-weight:400;">標準ミックス</small></button>
+        <button data-diff="hard"   style="flex:1;padding:10px 6px;border:2px solid #333;border-radius:8px;background:var(--panel2,#232b34);color:var(--text,#e4e8ec);cursor:pointer;font-size:12px;font-weight:600;line-height:1.4;">hard<br><small style="color:var(--muted,#8a939d);font-weight:400;">強敵だらけ</small></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <a href="https://github.com" onclick="event.preventDefault();">📥 履歴エクスポートは各モード内から</a>
+  </div>
+
+</div>
+
+<script>
+  // Load mini stats
+  try {
+    const live = JSON.parse(localStorage.getItem('poker_hands_v1') || '[]');
+    document.getElementById('live-count').textContent = live.length;
+  } catch (e) {}
+  try {
+    const p = JSON.parse(localStorage.getItem('preflop_practice_stats') || '{}');
+    document.getElementById('practice-count').textContent = p.num || 0;
+    const acc = (p.num > 0) ? Math.round((p.correct || 0) * 100 / p.num) + '%' : '—';
+    document.getElementById('practice-acc').textContent = acc;
+  } catch (e) {}
+
+  // 難易度セレクタ
+  (function() {
+    const wrap = document.getElementById('diff-buttons');
+    if (!wrap) return;
+    let cur = localStorage.getItem('poker_difficulty') || 'medium';
+    function render() {
+      wrap.querySelectorAll('button').forEach(b => {
+        const on = b.dataset.diff === cur;
+        b.style.borderColor = on ? 'var(--success,#5dd39e)' : '#333';
+        b.style.background = on ? 'rgba(93,211,158,0.15)' : 'var(--panel2,#232b34)';
+      });
+    }
+    wrap.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', () => {
+        cur = b.dataset.diff;
+        localStorage.setItem('poker_difficulty', cur);
+        render();
+      });
+    });
+    render();
+  })();
+</script>
+</body>
+</html>
