@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Poker Trainer — 6-max NL Hold'em</title>
+<script>
+  // Mode flag: ?mode=tournament でトーナメントモード起動
+  window.TOURNAMENT_MODE = new URLSearchParams(location.search).get('mode') === 'tournament';
+  if (window.TOURNAMENT_MODE) document.title = 'Poker Trainer — 🏆 Tournament';
+</script>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1e3a2f">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -53,6 +58,7 @@
       grid-template-columns: minmax(0, 1fr) 340px;
       grid-template-areas:
         "header  log"
+        "tpanel  log"
         "stats   log"
         "table   log"
         "hero    log"
@@ -63,6 +69,7 @@
       align-items: start;
     }
     .header  { grid-area: header; margin-bottom: 0; }
+    .t-panel { grid-area: tpanel; margin-bottom: 0; }
     .stats   { grid-area: stats;  margin-bottom: 0; }
     .table   { grid-area: table;  margin-bottom: 0; }
     .hero-panel { grid-area: hero; margin-bottom: 0; }
@@ -91,6 +98,46 @@
   }
   .header .street {
     color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+  }
+
+  /* Tournament info panel (only visible in ?mode=tournament) */
+  .t-panel {
+    display: none;
+    background: linear-gradient(135deg, #1a2027, #232b34);
+    border: 2px solid #3a3f4a;
+    border-radius: 10px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  body.tournament-mode .t-panel { display: flex; }
+  .t-panel .t-title {
+    color: var(--hero); font-weight: 800; letter-spacing: 1px;
+  }
+  .t-panel .t-item { color: var(--text); white-space: nowrap; }
+  .t-panel .t-item b { color: var(--hero); font-weight: 700; }
+  .t-panel .t-sep { color: var(--muted); opacity: 0.5; }
+  .t-panel .m-deep    { color: #5dd39e; font-weight: 700; }
+  .t-panel .m-mid     { color: #ffd24a; font-weight: 700; }
+  .t-panel .m-short   { color: #ffb454; font-weight: 700; }
+  .t-panel .m-crit    { color: #ff6b6b; font-weight: 700; }
+  .t-panel .t-countdown { font-variant-numeric: tabular-nums; }
+
+  .push-hint {
+    display: inline-block;
+    background: linear-gradient(135deg, #ff6b6b, #c43a3a);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 800;
+    padding: 1px 5px;
+    border-radius: 6px;
+    margin-left: 4px;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+    box-shadow: 0 0 6px rgba(255,107,107,0.5);
   }
 
   /* Stats bar */
@@ -152,6 +199,8 @@
     transition: opacity 0.3s;
   }
   .seat.folded { opacity: 0.35; }
+  .seat.eliminated { opacity: 0.18; filter: grayscale(1); }
+  .seat.eliminated .status { color: var(--danger); font-weight: 800; }
   .seat .name {
     font-size: 11px;
     color: var(--muted);
@@ -633,6 +682,18 @@
     <div class="pot">Pot: $<span id="pot">0</span></div>
   </div>
 
+  <div class="t-panel" id="t-panel">
+    <span class="t-title">🏆 Tournament</span>
+    <span class="t-sep">|</span>
+    <span class="t-item">⏱️ Lv <b id="t-level">1</b> (<span class="t-countdown" id="t-countdown">5:00</span>)</span>
+    <span class="t-sep">|</span>
+    <span class="t-item">Blinds: <b id="t-blinds">50/100</b><span id="t-ante-wrap" style="display:none;"> + ante <b id="t-ante">0</b></span></span>
+    <span class="t-sep">|</span>
+    <span class="t-item">📊 M=<span id="t-mvalue">—</span> <span id="t-mphase">—</span></span>
+    <span class="t-sep">|</span>
+    <span class="t-item">👥 <b id="t-alive">6</b>/6 残</span>
+  </div>
+
   <div class="stats" id="stats">
     <div class="stat"><div class="label">Hands</div><div class="value" id="st-hands">0</div></div>
     <div class="stat"><div class="label">VPIP</div><div class="value" id="st-vpip">—</div></div>
@@ -744,7 +805,7 @@
     <button class="btn btn-allin" id="btn-allin">
       <span class="key">A</span>
       <span class="ico">⚡</span>
-      <span class="lbl">ALL-IN</span>
+      <span class="lbl">ALL-IN<span class="push-hint" id="push-hint" style="display:none;">Push推奨</span></span>
       <span class="sub" id="btn-allin-sub">$0</span>
     </button>
   </div>
@@ -1057,8 +1118,40 @@ const POS_COLORS = {
   CO:  { bg: '#5dd39e', fg: '#1a1a1a' }, // 緑 — 攻めポジ
 };
 
+// ──────────────────────────────────────────────
+// Tournament structure (only used when TOURNAMENT_MODE)
+// ──────────────────────────────────────────────
+const TOURNAMENT_MODE = !!window.TOURNAMENT_MODE;
+// Blind ladder: ~1.5x every 5 minutes. Ante introduced from level 5 (~10% of BB).
+const TOURNAMENT_LEVELS = [
+  { sb: 50,   bb: 100,  ante: 0 },
+  { sb: 75,   bb: 150,  ante: 0 },
+  { sb: 100,  bb: 200,  ante: 0 },
+  { sb: 150,  bb: 300,  ante: 0 },
+  { sb: 200,  bb: 400,  ante: 40 },
+  { sb: 300,  bb: 600,  ante: 60 },
+  { sb: 500,  bb: 1000, ante: 100 },
+  { sb: 750,  bb: 1500, ante: 150 },
+  { sb: 1000, bb: 2000, ante: 200 },
+  { sb: 1500, bb: 3000, ante: 300 },
+  { sb: 2000, bb: 4000, ante: 400 },
+  { sb: 3000, bb: 6000, ante: 600 },
+  { sb: 5000, bb: 10000, ante: 1000 },
+];
+const TOURNAMENT_LEVEL_SECONDS = 5 * 60;
+const TOURNAMENT_START_STACK = 10000;
+
 function createGame() {
-  const numPlayers = 6, startStack = 200, sb = 1, bb = 2;
+  const numPlayers = 6;
+  let startStack, sb, bb, ante;
+  if (TOURNAMENT_MODE) {
+    startStack = TOURNAMENT_START_STACK;
+    sb = TOURNAMENT_LEVELS[0].sb;
+    bb = TOURNAMENT_LEVELS[0].bb;
+    ante = TOURNAMENT_LEVELS[0].ante;
+  } else {
+    startStack = 200; sb = 1; bb = 2; ante = 0;
+  }
   const difficulty = getDifficulty();
   const typeAssign = DIFFICULTY[difficulty] || DIFFICULTY.medium;
   const players = [];
@@ -1067,13 +1160,22 @@ function createGame() {
       idx: i, name: i === 0 ? 'Hero' : VILLAIN_NAMES[i - 1],
       isHero: i === 0, aiType: i === 0 ? null : typeAssign[i - 1],
       stack: startStack,
+      eliminated: false,
       cards: [], folded: false, allIn: false,
       committedThisStreet: 0, totalCommitted: 0, handScore: null,
     });
   }
-  return { numPlayers, startStack, sb, bb, difficulty, handCount: 0, btnIdx: 0, heroIdx: 0,
+  return { numPlayers, startStack, sb, bb, ante, difficulty, handCount: 0, btnIdx: 0, heroIdx: 0,
            players, pot: 0, board: [], actions: [], street: 'preflop',
-           currentBet: 0, lastRaiseSize: bb };
+           currentBet: 0, lastRaiseSize: bb,
+           tournament: TOURNAMENT_MODE ? {
+             level: 0,
+             startedAt: Date.now(),
+             levelStartedAt: Date.now(),
+             gameOver: false,
+             eliminationRank: null, // Hero broke 時の順位
+             handsSurvived: 0,
+           } : null };
 }
 function positionName(state, p) {
   const off = (p.idx - state.btnIdx + state.numPlayers) % state.numPlayers;
@@ -1115,6 +1217,13 @@ function postBlind(state, idx, amt) {
   const p = state.players[idx];
   const a = Math.min(amt, p.stack);
   p.stack -= a; p.committedThisStreet += a; p.totalCommitted += a; state.pot += a;
+  if (p.stack === 0) p.allIn = true;
+}
+function postAnte(state, idx, amt) {
+  // Ante = dead money: goes into pot but does NOT count as committedThisStreet
+  const p = state.players[idx];
+  const a = Math.min(amt, p.stack);
+  p.stack -= a; p.totalCommitted += a; state.pot += a;
   if (p.stack === 0) p.allIn = true;
 }
 function bettingComplete(state) {
@@ -1232,9 +1341,11 @@ function renderState() {
     if (col) { posBadge.style.background = col.bg; posBadge.style.color = col.fg; }
     el.classList.toggle('is-button', pos === 'BTN');
     const statusEl = el.querySelector('[data-role="status"]');
-    if (p.folded) statusEl.textContent = 'FOLD';
+    if (p.eliminated) statusEl.textContent = 'OUT';
+    else if (p.folded) statusEl.textContent = 'FOLD';
     else if (p.allIn) statusEl.textContent = 'ALL-IN';
     else statusEl.textContent = '';
+    el.classList.toggle('eliminated', !!p.eliminated);
 
     const betEl = el.querySelector('[data-role="bet"]');
     if (p.committedThisStreet > 0 && !p.folded) {
@@ -1262,6 +1373,9 @@ function renderState() {
   updateHandStrength();
 
   $('hands-count').textContent = (JSON.parse(localStorage.getItem(LS_KEY) || '[]')).length;
+
+  // Tournament panel refresh
+  if (TOURNAMENT_MODE) renderTournamentPanel();
 }
 
 function updateHandStrength() {
@@ -1333,6 +1447,13 @@ function configureActionButtons() {
   $('btn-allin-sub').textContent = `$${hero.stack}`;
   $('btn-allin').disabled = hero.stack <= 0;
   $('btn-fold').disabled = false;
+
+  // Push/Fold ヒント (トーナメント時 & スタック ≦ 10BB)
+  const pushHintEl = $('push-hint');
+  if (pushHintEl) {
+    const showPush = TOURNAMENT_MODE && state.bb > 0 && hero.stack <= state.bb * 10 && hero.stack > 0;
+    pushHintEl.style.display = showPush ? 'inline-block' : 'none';
+  }
 
   renderQuickRaises();
 }
@@ -1604,19 +1725,57 @@ function dealStreet(deck, street) {
 }
 
 async function playHand() {
+  // ── Tournament: pre-hand checks ─────────────────────────
+  if (TOURNAMENT_MODE && state.tournament) {
+    if (state.tournament.gameOver) return;
+    // Mark new eliminations from previous hand
+    for (const p of state.players) {
+      if (!p.eliminated && p.stack <= 0) {
+        p.eliminated = true;
+        log(`💀 ${p.name} 脱落（${aliveCount(state)}名残）`, 'system');
+      }
+    }
+    // Hero eliminated → game over
+    if (state.players[0].eliminated) {
+      showTournamentGameOver();
+      return;
+    }
+    // Only 1 left → Hero is winner
+    if (aliveCount(state) <= 1) {
+      log(`🏆 優勝！ ${state.handCount}ハンドで生存`, 'result');
+      state.tournament.gameOver = true;
+      stopBlindTimer();
+      alert(`🏆 トーナメント優勝！\n${state.handCount}ハンドで全員脱落`);
+      return;
+    }
+    state.tournament.handsSurvived = state.handCount;
+  }
+
   state.handCount++;
   state.pot = 0; state.board = []; state.actions = [];
   state.street = 'preflop'; state.currentBet = 0; state.lastRaiseSize = state.bb;
   for (const p of state.players) {
-    p.cards = []; p.folded = p.stack <= 0;
+    p.cards = []; p.folded = p.eliminated || p.stack <= 0;
     p.allIn = false; p.committedThisStreet = 0; p.totalCommitted = 0; p.handScore = null;
   }
-  // Auto-rebuy villains
-  for (const p of state.players) {
-    if (!p.isHero && p.stack < state.bb) { p.stack = state.startStack; p.folded = false; }
+  if (TOURNAMENT_MODE) {
+    // ❌ No auto-rebuy in tournament. Broke players are eliminated.
+    // (eliminated flag already set above and p.folded=true here means they sit out)
+  } else {
+    // Auto-rebuy villains (cash game only)
+    for (const p of state.players) {
+      if (!p.isHero && p.stack < state.bb) { p.stack = state.startStack; p.folded = false; }
+    }
   }
   if (state.players.filter(p => !p.folded).length < 2) {
-    log('プレイヤー不足。終了。', 'error'); return;
+    if (TOURNAMENT_MODE) {
+      log('🏆 プレイヤー不足 — トーナメント終了', 'result');
+      if (state.tournament) state.tournament.gameOver = true;
+      stopBlindTimer();
+    } else {
+      log('プレイヤー不足。終了。', 'error');
+    }
+    return;
   }
   // Reset showdown UI
   document.querySelectorAll('.seat').forEach(s => s.classList.remove('showdown'));
@@ -1629,10 +1788,20 @@ async function playHand() {
     }
     return from;
   };
+  // Advance btnIdx past any eliminated players in tournament mode
+  if (TOURNAMENT_MODE && state.players[state.btnIdx].eliminated) {
+    state.btnIdx = nextActive(state.btnIdx);
+  }
   const sbIdx = nextActive(state.btnIdx);
   const bbIdx = nextActive(sbIdx);
   postBlind(state, sbIdx, state.sb);
   postBlind(state, bbIdx, state.bb);
+  // Post antes (tournament mode, when ante > 0) — dead money, not committedThisStreet
+  if (TOURNAMENT_MODE && state.ante > 0) {
+    for (const p of state.players) {
+      if (!p.folded && !p.eliminated) postAnte(state, p.idx, state.ante);
+    }
+  }
   state.currentBet = state.bb;
   state.lastRaiseSize = state.bb;
 
@@ -1643,7 +1812,7 @@ async function playHand() {
   for (const p of state.players) stacksStart[p.name] = p.stack + p.totalCommitted;
 
   log(`══ Hand #${state.handCount} ══`, 'system');
-  log(`SB $${state.sb} (${positionName(state, state.players[sbIdx])} ${state.players[sbIdx].name}) / BB $${state.bb} (${positionName(state, state.players[bbIdx])} ${state.players[bbIdx].name})`);
+  log(`SB $${state.sb} (${positionName(state, state.players[sbIdx])} ${state.players[sbIdx].name}) / BB $${state.bb} (${positionName(state, state.players[bbIdx])} ${state.players[bbIdx].name})${TOURNAMENT_MODE && state.ante > 0 ? ` / ante $${state.ante}` : ''}`);
   renderState();
   checkPremiumAnnounce();
 
@@ -1719,9 +1888,25 @@ async function playHand() {
   state.btnIdx = (state.btnIdx + 1) % state.numPlayers;
 
   if (state.players[0].stack <= 0) {
-    if (confirm('チップ切れ。 $200 リロードして続けますか？')) {
-      state.players[0].stack = state.startStack;
-    } else { log('終了。', 'system'); return; }
+    if (TOURNAMENT_MODE) {
+      // Tournament: Game over with rank/hands info
+      state.players[0].eliminated = true;
+      showTournamentGameOver();
+      return;
+    } else {
+      if (confirm('チップ切れ。 $200 リロードして続けますか？')) {
+        state.players[0].stack = state.startStack;
+      } else { log('終了。', 'system'); return; }
+    }
+  }
+
+  // Tournament: check if only Hero remains (winner) before scheduling next hand
+  if (TOURNAMENT_MODE && state.tournament && aliveCount(state) <= 1) {
+    log(`🏆 優勝！ ${state.handCount}ハンドで生存`, 'result');
+    state.tournament.gameOver = true;
+    stopBlindTimer();
+    setTimeout(() => alert(`🏆 トーナメント優勝！\n${state.handCount}ハンドで全員脱落させました`), 100);
+    return;
   }
 
   // Auto-advance to next hand
@@ -1735,6 +1920,97 @@ async function playHand() {
     $('btn-next-now').style.display = 'none';
     if (!autoplayPaused) playHand();
   }, delay);
+}
+
+// ──────────────────────────────────────────────
+// Tournament helpers
+// ──────────────────────────────────────────────
+function aliveCount(state) {
+  return state.players.filter(p => !p.eliminated).length;
+}
+
+function showTournamentGameOver() {
+  if (!state.tournament) return;
+  state.tournament.gameOver = true;
+  stopBlindTimer();
+  // Rank = number of players still alive (Hero is last one to bust → he is at rank = alive+1)
+  const aliveAfter = state.players.filter(p => !p.eliminated && !p.isHero).length;
+  const rank = aliveAfter + 1; // Hero finished {rank}th out of 6
+  const hands = state.handCount;
+  state.tournament.eliminationRank = rank;
+  log(`💀 ゲームオーバー — Hero 脱落（${rank}位 / 6）, ${hands}ハンド生存`, 'error');
+  setTimeout(() => {
+    alert(`💀 ゲームオーバー\n\n累計 ${rank} 位 / 6\n${hands} ハンド生存\n\nお疲れさまでした！`);
+  }, 300);
+}
+
+// Blind-up timer
+let blindTimerInterval = null;
+function startBlindTimer() {
+  if (!TOURNAMENT_MODE || !state.tournament) return;
+  stopBlindTimer();
+  blindTimerInterval = setInterval(() => {
+    if (!state.tournament || state.tournament.gameOver) {
+      stopBlindTimer();
+      return;
+    }
+    const elapsed = (Date.now() - state.tournament.levelStartedAt) / 1000;
+    if (elapsed >= TOURNAMENT_LEVEL_SECONDS) {
+      // Advance level
+      const next = Math.min(state.tournament.level + 1, TOURNAMENT_LEVELS.length - 1);
+      state.tournament.level = next;
+      state.tournament.levelStartedAt = Date.now();
+      const lv = TOURNAMENT_LEVELS[next];
+      state.sb = lv.sb; state.bb = lv.bb; state.ante = lv.ante;
+      log(`⏫ Lv ${next + 1} — Blinds ${lv.sb}/${lv.bb}${lv.ante > 0 ? ` + ante ${lv.ante}` : ''}`, 'result');
+    }
+    renderTournamentPanel();
+  }, 1000);
+}
+function stopBlindTimer() {
+  if (blindTimerInterval) { clearInterval(blindTimerInterval); blindTimerInterval = null; }
+}
+
+function calcHeroM() {
+  if (!state.tournament) return null;
+  const hero = state.players[0];
+  const aliveOthers = state.players.filter(p => !p.eliminated && !p.isHero).length;
+  // M = stack / (SB + BB + total antes from all alive players)
+  const totalAnte = state.ante * (aliveOthers + 1);
+  const cost = state.sb + state.bb + totalAnte;
+  if (cost <= 0) return null;
+  return hero.stack / cost;
+}
+
+function mPhase(m) {
+  if (m == null) return { label: '—', cls: '' };
+  if (m >= 20) return { label: '🟢 Deep',  cls: 'm-deep'  };
+  if (m >= 10) return { label: '🟡 Mid',   cls: 'm-mid'   };
+  if (m >= 6)  return { label: '🟠 Short', cls: 'm-short' };
+  return            { label: '🔴 Crit',  cls: 'm-crit'  };
+}
+
+function renderTournamentPanel() {
+  if (!TOURNAMENT_MODE || !state.tournament) return;
+  const t = state.tournament;
+  $('t-level').textContent = (t.level + 1);
+  const remain = Math.max(0, TOURNAMENT_LEVEL_SECONDS - Math.floor((Date.now() - t.levelStartedAt) / 1000));
+  const mm = Math.floor(remain / 60), ss = remain % 60;
+  $('t-countdown').textContent = `${mm}:${ss.toString().padStart(2, '0')}`;
+  $('t-blinds').textContent = `${state.sb}/${state.bb}`;
+  if (state.ante > 0) {
+    $('t-ante-wrap').style.display = 'inline';
+    $('t-ante').textContent = state.ante;
+  } else {
+    $('t-ante-wrap').style.display = 'none';
+  }
+  const m = calcHeroM();
+  $('t-mvalue').textContent = m == null ? '—' : m.toFixed(1);
+  const ph = mPhase(m);
+  const mphaseEl = $('t-mphase');
+  mphaseEl.textContent = ph.label;
+  mphaseEl.className = ph.cls;
+  $('t-alive').textContent = aliveCount(state);
 }
 
 function checkPremiumAnnounce() {
@@ -1918,7 +2194,14 @@ bindActionButtons();
 showActions(false);
 renderState();
 updateStats();
-log('Poker Trainer 起動。▶ 開始 で始めます。キー: F=Fold C=Call R=Raise A=All-in Space=次へ P=一時停止', 'system');
+if (TOURNAMENT_MODE) {
+  document.body.classList.add('tournament-mode');
+  log('🏆 Tournament Mode 起動 — スタック10000 / SB50・BB100 / 5分毎ブラインドアップ / 脱落あり', 'system');
+  renderTournamentPanel();
+  startBlindTimer();
+} else {
+  log('Poker Trainer 起動。▶ 開始 で始めます。キー: F=Fold C=Call R=Raise A=All-in Space=次へ P=一時停止', 'system');
+}
 $('btn-start').style.display = 'inline-block';
 </script>
 </body>
