@@ -650,6 +650,33 @@
   .footer .small-btn:hover { border-color: var(--accent); }
   .footer .small-btn.danger { color: var(--danger); }
 
+  /* ── 収支グラフ オーバーレイ ── */
+  .pnl-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(8,11,15,0.92);
+    display: none; padding: 16px; overflow-y: auto;
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  }
+  .pnl-overlay.open { display: flex; }
+  .pnl-card {
+    background: var(--panel); border: 1px solid #2c3540; border-radius: 14px;
+    padding: 16px; max-width: 760px; width: 100%; margin: auto;
+  }
+  .pnl-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .pnl-head h2 { font-size: 17px; color: var(--text); }
+  .pnl-close {
+    background: var(--panel2); color: var(--text); border: 1px solid #3a4450;
+    border-radius: 8px; padding: 6px 12px; font-size: 14px; cursor: pointer;
+  }
+  .pnl-summary { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 14px; }
+  .pnl-summary .box { background: var(--panel2); border-radius: 10px; padding: 8px 6px; text-align: center; }
+  .pnl-summary .box .l { font-size: 10px; color: var(--muted); }
+  .pnl-summary .box .v { font-size: 16px; font-weight: 700; color: var(--text); margin-top: 2px; }
+  .pnl-summary .box .v.pos { color: var(--success); }
+  .pnl-summary .box .v.neg { color: var(--danger); }
+  .pnl-chart { width: 100%; height: auto; background: var(--bg); border-radius: 10px; display: block; }
+  .pnl-empty { text-align: center; color: var(--muted); padding: 44px 12px; line-height: 1.7; }
+
   /* Mobile */
   @media (max-width: 600px) {
     body { padding: 6px; font-size: 13px; }
@@ -830,9 +857,23 @@
     <button class="small-btn" id="btn-start" style="display:none;">▶ 開始</button>
     <button class="small-btn" id="btn-pause">⏸ 一時停止</button>
     <button class="small-btn" id="btn-next-now" style="display:none;">⏭ 次へ</button>
+    <button class="small-btn" id="btn-graph">📈 収支グラフ</button>
     <button class="small-btn" id="btn-export">📥 履歴エクスポート (<span id="hands-count">0</span>)</button>
+    <button class="small-btn" id="btn-reset-stack">🔄 バンクロールリセット</button>
     <button class="small-btn danger" id="btn-clear">🗑️ 履歴クリア</button>
     <a class="small-btn" href="index.html" style="text-decoration:none;">🏠 メニュー</a>
+  </div>
+
+  <!-- 収支グラフ オーバーレイ -->
+  <div class="pnl-overlay" id="pnl-overlay">
+    <div class="pnl-card">
+      <div class="pnl-head">
+        <h2>📈 収支グラフ（累計）</h2>
+        <button class="pnl-close" id="pnl-close">✕ 閉じる</button>
+      </div>
+      <div class="pnl-summary" id="pnl-summary"></div>
+      <div id="pnl-body"></div>
+    </div>
   </div>
 
 </div>
@@ -1154,12 +1195,18 @@ function createGame() {
   }
   const difficulty = getDifficulty();
   const typeAssign = DIFFICULTY[difficulty] || DIFFICULTY.medium;
+  // キャッシュゲームはヒーローの持ちチップを localStorage から復元（タブを閉じても継続）。トーナメントは毎回フレッシュ。
+  let heroStack = startStack;
+  if (!TOURNAMENT_MODE) {
+    const saved = parseInt(localStorage.getItem(HERO_STACK_KEY) || '', 10);
+    if (Number.isFinite(saved) && saved > 0) heroStack = saved;
+  }
   const players = [];
   for (let i = 0; i < numPlayers; i++) {
     players.push({
       idx: i, name: i === 0 ? 'Hero' : VILLAIN_NAMES[i - 1],
       isHero: i === 0, aiType: i === 0 ? null : typeAssign[i - 1],
-      stack: startStack,
+      stack: i === 0 ? heroStack : startStack,
       eliminated: false,
       cards: [], folded: false, allIn: false,
       committedThisStreet: 0, totalCommitted: 0, handScore: null,
@@ -1275,8 +1322,9 @@ function minRaiseTotal(state) {
 // UI / Rendering
 // ──────────────────────────────────────────────
 
-const state = createGame();
 const LS_KEY = 'poker_hands_v1';
+const HERO_STACK_KEY = 'poker_hero_stack_v1';
+const state = createGame();
 let pendingResolve = null;
 let raiseMode = false;
 let autoplayPaused = false;
@@ -1652,6 +1700,10 @@ function bindActionButtons() {
   };
   $('btn-export').onclick = exportHistory;
   $('btn-clear').onclick = clearHistory;
+  $('btn-graph').onclick = showPnlGraph;
+  $('btn-reset-stack').onclick = resetBankroll;
+  $('pnl-close').onclick = () => $('pnl-overlay').classList.remove('open');
+  $('pnl-overlay').onclick = (e) => { if (e.target === $('pnl-overlay')) $('pnl-overlay').classList.remove('open'); };
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -1883,6 +1935,7 @@ async function playHand() {
     hero_net: net,
   };
   saveHandToLS(data);
+  persistHeroStack();
 
   renderState();
   state.btnIdx = (state.btnIdx + 1) % state.numPlayers;
@@ -1896,6 +1949,7 @@ async function playHand() {
     } else {
       if (confirm('チップ切れ。 $200 リロードして続けますか？')) {
         state.players[0].stack = state.startStack;
+        persistHeroStack();
       } else { log('終了。', 'system'); return; }
     }
   }
@@ -2158,11 +2212,98 @@ function exportHistory() {
   URL.revokeObjectURL(url);
 }
 function clearHistory() {
-  if (!confirm('履歴を全て削除しますか？')) return;
+  if (!confirm('履歴とスタックを全てリセットしますか？（最初からやり直し）')) return;
   localStorage.removeItem(LS_KEY);
+  try { localStorage.removeItem(HERO_STACK_KEY); } catch (e) {}
+  if (state.players && state.players[0]) {
+    state.players[0].stack = state.startStack;
+    $('hero-stack').textContent = state.players[0].stack;
+    renderState();
+  }
   $('hands-count').textContent = 0;
   updateStats();
-  log('履歴クリア完了', 'system');
+  log('履歴・スタックをリセットしました', 'system');
+}
+
+// ── スタック永続化（キャッシュゲーム） ──
+function persistHeroStack() {
+  if (TOURNAMENT_MODE) return;
+  try { localStorage.setItem(HERO_STACK_KEY, String(state.players[0].stack)); } catch (e) {}
+}
+
+// バンクロールだけ $200 に戻す（収支グラフ＝履歴は残す）
+function resetBankroll() {
+  if (!confirm('持ちチップを $200 に戻しますか？（収支グラフ・履歴は残ります）')) return;
+  try { localStorage.removeItem(HERO_STACK_KEY); } catch (e) {}
+  state.players[0].stack = state.startStack;
+  $('hero-stack').textContent = state.players[0].stack;
+  renderState();
+  log('バンクロールを $200 に戻しました', 'system');
+}
+
+// ── 収支グラフ ──
+function showPnlGraph() {
+  const arr = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+  const summary = $('pnl-summary');
+  const body = $('pnl-body');
+  if (arr.length === 0) {
+    summary.innerHTML = '';
+    body.innerHTML = '<div class="pnl-empty">まだハンド履歴がありません。<br>何ハンドかプレイすると、ここに累計収支が表示されます。</div>';
+    $('pnl-overlay').classList.add('open');
+    return;
+  }
+  let cum = 0;
+  const pts = arr.map((h, i) => { cum += (h.hero_net || 0); return { x: i + 1, y: cum }; });
+  const net = cum;
+  const hands = arr.length;
+  const bb = 2; // キャッシュ $1/$2
+  const bb100 = (net / bb) / hands * 100;
+  let peak = 0, trough = 0;
+  for (const p of pts) { if (p.y > peak) peak = p.y; if (p.y < trough) trough = p.y; }
+  const winHands = arr.filter(h => (h.hero_net || 0) > 0).length;
+  const fmt = v => (v >= 0 ? '+' : '') + '$' + Math.round(v);
+  summary.innerHTML = `
+    <div class="box"><div class="l">ハンド数</div><div class="v">${hands}</div></div>
+    <div class="box"><div class="l">累計収支</div><div class="v ${net>=0?'pos':'neg'}">${fmt(net)}</div></div>
+    <div class="box"><div class="l">BB/100</div><div class="v ${bb100>=0?'pos':'neg'}">${(bb100>=0?'+':'')+bb100.toFixed(1)}</div></div>
+    <div class="box"><div class="l">最高到達</div><div class="v pos">${fmt(peak)}</div></div>
+    <div class="box"><div class="l">最大ドローダウン</div><div class="v neg">${fmt(trough)}</div></div>
+    <div class="box"><div class="l">勝ちハンド率</div><div class="v">${Math.round(winHands*100/hands)}%</div></div>`;
+  body.innerHTML = renderPnlChart(pts);
+  $('pnl-overlay').classList.add('open');
+}
+
+function renderPnlChart(pts) {
+  const W = 700, H = 320, padL = 50, padR = 16, padT = 16, padB = 26;
+  const ys = pts.map(p => p.y);
+  const minX = 1, maxX = Math.max(pts.length, 2);
+  let minY = Math.min(0, ...ys), maxY = Math.max(0, ...ys);
+  if (minY === maxY) { minY -= 1; maxY += 1; }
+  const padY = (maxY - minY) * 0.08 || 1; minY -= padY; maxY += padY;
+  const sx = x => padL + (x - minX) / (maxX - minX) * (W - padL - padR);
+  const sy = y => padT + (maxY - y) / (maxY - minY) * (H - padT - padB);
+  const zeroY = sy(0);
+  const line = pts.map((p, i) => (i === 0 ? 'M' : 'L') + sx(p.x).toFixed(1) + ',' + sy(p.y).toFixed(1)).join(' ');
+  const area = `M${sx(pts[0].x).toFixed(1)},${zeroY.toFixed(1)} ` +
+    pts.map(p => 'L' + sx(p.x).toFixed(1) + ',' + sy(p.y).toFixed(1)).join(' ') +
+    ` L${sx(pts[pts.length-1].x).toFixed(1)},${zeroY.toFixed(1)} Z`;
+  const col = pts[pts.length-1].y >= 0 ? '#5dd39e' : '#ff6b6b';
+  let grid = '';
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const yv = minY + (maxY - minY) * i / ticks;
+    const yy = sy(yv);
+    grid += `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="#222c36" stroke-width="1"/>`;
+    grid += `<text x="${padL-6}" y="${(yy+3).toFixed(1)}" fill="#8a939d" font-size="10" text-anchor="end">${(yv>=0?'+':'')+Math.round(yv)}</text>`;
+  }
+  return `<svg class="pnl-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+    ${grid}
+    <line x1="${padL}" y1="${zeroY.toFixed(1)}" x2="${W-padR}" y2="${zeroY.toFixed(1)}" stroke="#4a5560" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <path d="${area}" fill="${col}" fill-opacity="0.12"/>
+    <path d="${line}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+    <text x="${padL}" y="${H-7}" fill="#8a939d" font-size="10">1</text>
+    <text x="${W-padR}" y="${H-7}" fill="#8a939d" font-size="10" text-anchor="end">${pts.length} hands</text>
+  </svg>`;
 }
 
 // Keyboard shortcuts
