@@ -247,6 +247,24 @@
     font-weight: 700;
     margin-top: 2px;
   }
+  /* ① 前のプレイヤーのアクション表示（今ストリート・色分け） */
+  .seat .status.act-check { color: var(--muted); }
+  .seat .status.act-call  { color: var(--call); }
+  .seat .status.act-bet,
+  .seat .status.act-raise { color: var(--raise); }
+  .seat .status.act-fold  { color: var(--fold); }
+  .seat .status.act-allin { color: var(--hero); }
+  /* ② フラグFAB（このハンドをワンタップ保存） */
+  .flag-fab {
+    position: fixed; right: 14px; bottom: 14px; z-index: 60;
+    width: 50px; height: 50px; border-radius: 50%;
+    background: var(--panel2); border: 2px solid #3a4452; color: var(--text);
+    font-size: 22px; cursor: pointer; box-shadow: 0 3px 10px rgba(0,0,0,.5);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .1s ease, background .15s ease;
+  }
+  .flag-fab:active { transform: scale(.88); }
+  .flag-fab.active { background: var(--hero); border-color: var(--hero); color: #1a1a1a; }
   .seat .winnings {
     position: absolute;
     top: -32px; left: 50%;
@@ -859,6 +877,7 @@
     <button class="small-btn" id="btn-next-now" style="display:none;">⏭ 次へ</button>
     <button class="small-btn" id="btn-graph">📈 収支グラフ</button>
     <button class="small-btn" id="btn-export">📥 履歴エクスポート (<span id="hands-count">0</span>)</button>
+    <button class="small-btn" id="btn-flag-export">🚩 保存分 (<span id="flag-count">0</span>)</button>
     <button class="small-btn" id="btn-reset-stack">🔄 バンクロールリセット</button>
     <button class="small-btn danger" id="btn-clear">🗑️ 履歴クリア</button>
     <a class="small-btn" href="index.html" style="text-decoration:none;">🏠 メニュー</a>
@@ -875,6 +894,9 @@
       <div id="pnl-body"></div>
     </div>
   </div>
+
+  <!-- ② フラグFAB：このハンドをワンタップで復習キューに保存 -->
+  <button class="flag-fab" id="btn-flag" title="このハンドをフラグ保存">🚩</button>
 
 </div>
 
@@ -1324,6 +1346,9 @@ function minRaiseTotal(state) {
 
 const LS_KEY = 'poker_hands_v1';
 const HERO_STACK_KEY = 'poker_hero_stack_v1';
+const FLAG_KEY = 'poker_flagged_v1';   // ② フラグ（復習キュー）
+let handFlagged = false;               // 現ハンドがフラグ済か
+let currentHandSaved = false;          // 現ハンドが既に保存されたか（ハンド間判定）
 const state = createGame();
 let pendingResolve = null;
 let raiseMode = false;
@@ -1365,6 +1390,18 @@ function placeSeats() {
   }
 }
 
+// ① 各プレイヤーの「今ストリートの直近アクション」を返す（表示用）
+function lastActionThisStreet(name) {
+  for (let i = state.actions.length - 1; i >= 0; i--) {
+    const a = state.actions[i];
+    if (a.street !== state.street) break; // 今ストリートだけ（過去ストリートに達したら終了）
+    if (a.player === name) {
+      return ['check','call','bet','raise'].includes(a.action) ? a.action : null;
+    }
+  }
+  return null;
+}
+
 function renderState() {
   $('hand-num').textContent = state.handCount;
   $('pot').textContent = state.pot;
@@ -1389,10 +1426,16 @@ function renderState() {
     if (col) { posBadge.style.background = col.bg; posBadge.style.color = col.fg; }
     el.classList.toggle('is-button', pos === 'BTN');
     const statusEl = el.querySelector('[data-role="status"]');
-    if (p.eliminated) statusEl.textContent = 'OUT';
-    else if (p.folded) statusEl.textContent = 'FOLD';
-    else if (p.allIn) statusEl.textContent = 'ALL-IN';
-    else statusEl.textContent = '';
+    let stext = '', scls = '';
+    if (p.eliminated) { stext = 'OUT'; scls = 'act-fold'; }
+    else if (p.folded) { stext = 'FOLD'; scls = 'act-fold'; }
+    else if (p.allIn) { stext = 'ALL-IN'; scls = 'act-allin'; }
+    else {
+      const la = lastActionThisStreet(p.name); // ① 今ストリートの直近アクションを表示
+      if (la) { stext = la.toUpperCase(); scls = 'act-' + la; }
+    }
+    statusEl.textContent = stext;
+    statusEl.className = 'status' + (scls ? ' ' + scls : '');
     el.classList.toggle('eliminated', !!p.eliminated);
 
     const betEl = el.querySelector('[data-role="bet"]');
@@ -1702,6 +1745,9 @@ function bindActionButtons() {
   $('btn-clear').onclick = clearHistory;
   $('btn-graph').onclick = showPnlGraph;
   $('btn-reset-stack').onclick = resetBankroll;
+  $('btn-flag').onclick = toggleFlag;          // ② フラグFAB
+  $('btn-flag-export').onclick = exportFlagged; // ② フラグ履歴エクスポート
+  updateFlagCount();
   $('pnl-close').onclick = () => $('pnl-overlay').classList.remove('open');
   $('pnl-overlay').onclick = (e) => { if (e.target === $('pnl-overlay')) $('pnl-overlay').classList.remove('open'); };
 }
@@ -1806,6 +1852,7 @@ async function playHand() {
   state.handCount++;
   state.pot = 0; state.board = []; state.actions = [];
   state.street = 'preflop'; state.currentBet = 0; state.lastRaiseSize = state.bb;
+  handFlagged = false; currentHandSaved = false; updateFlagBtn(); // ② 新ハンドでフラグリセット
   for (const p of state.players) {
     p.cards = []; p.folded = p.eliminated || p.stack <= 0;
     p.allIn = false; p.committedThisStreet = 0; p.totalCommitted = 0; p.handScore = null;
@@ -1933,8 +1980,11 @@ async function playHand() {
       : null,
     results,
     hero_net: net,
+    flagged: handFlagged, // ② フラグ済か
   };
   saveHandToLS(data);
+  currentHandSaved = true;
+  if (handFlagged) pushFlagged(data); // ② フラグ済なら復習キューにも保存
   persistHeroStack();
 
   renderState();
@@ -2172,6 +2222,61 @@ function saveHandToLS(data) {
   arr.push(data);
   localStorage.setItem(LS_KEY, JSON.stringify(arr));
   updateStats();
+}
+
+// ── ② フラグ（復習キュー）機能 ──────────────────────
+function updateFlagBtn() {
+  const b = $('btn-flag');
+  if (b) b.classList.toggle('active', handFlagged);
+}
+function updateFlagCount() {
+  const n = (JSON.parse(localStorage.getItem(FLAG_KEY) || '[]')).length;
+  const el = $('flag-count');
+  if (el) el.textContent = n;
+}
+function pushFlagged(data) {
+  const arr = JSON.parse(localStorage.getItem(FLAG_KEY) || '[]');
+  if (!arr.some(h => h.timestamp === data.timestamp)) {
+    arr.push(data);
+    localStorage.setItem(FLAG_KEY, JSON.stringify(arr));
+  }
+  updateFlagCount();
+}
+function removeFlagged(timestamp) {
+  const arr = JSON.parse(localStorage.getItem(FLAG_KEY) || '[]').filter(h => h.timestamp !== timestamp);
+  localStorage.setItem(FLAG_KEY, JSON.stringify(arr));
+  updateFlagCount();
+}
+function flagLastSavedHand() {
+  // ハンド完了後（次が配られる前）に押した場合：直前の保存済ハンドをトグル
+  const arr = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+  if (arr.length === 0) return;
+  const last = arr[arr.length - 1];
+  last.flagged = !last.flagged;
+  localStorage.setItem(LS_KEY, JSON.stringify(arr));
+  if (last.flagged) pushFlagged(last); else removeFlagged(last.timestamp);
+  $('btn-flag').classList.toggle('active', !!last.flagged);
+  log(last.flagged ? '🚩 直前のハンドをフラグ保存' : '🚩 フラグ解除', 'system');
+}
+function toggleFlag() {
+  if (currentHandSaved) {
+    flagLastSavedHand(); // ハンド間 → 直前ハンドをトグル
+  } else {
+    handFlagged = !handFlagged; // プレイ中 → 完了時に保存
+    updateFlagBtn();
+    log(handFlagged ? '🚩 このハンドをフラグ（完了時に保存）' : '🚩 フラグ解除', 'system');
+  }
+}
+function exportFlagged() {
+  const arr = JSON.parse(localStorage.getItem(FLAG_KEY) || '[]');
+  if (arr.length === 0) { alert('フラグしたハンドがありません'); return; }
+  const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `poker_flagged_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function updateStats() {
