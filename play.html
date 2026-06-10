@@ -692,6 +692,13 @@
   .pnl-summary .box .v { font-size: 16px; font-weight: 700; color: var(--text); margin-top: 2px; }
   .pnl-summary .box .v.pos { color: var(--success); }
   .pnl-summary .box .v.neg { color: var(--danger); }
+  .pnl-summary .box .v.warn { color: var(--warning); }
+  /* リーク分析ダッシュボード */
+  .lk-table { width: 100%; border-collapse: collapse; margin-top: 2px; }
+  .lk-table th, .lk-table td { padding: 5px 6px; font-size: 12px; text-align: center; border-bottom: 1px solid #2a323c; }
+  .lk-table th { color: var(--muted); font-weight: 600; }
+  .lk-note { font-size: 11.5px; color: var(--muted); margin-top: 12px; line-height: 1.7; }
+  .lk-note b.warn { color: var(--warning); }
   .pnl-chart { width: 100%; height: auto; background: var(--bg); border-radius: 10px; display: block; }
   .pnl-empty { text-align: center; color: var(--muted); padding: 44px 12px; line-height: 1.7; }
 
@@ -876,6 +883,7 @@
     <button class="small-btn" id="btn-pause">⏸ 一時停止</button>
     <button class="small-btn" id="btn-next-now" style="display:none;">⏭ 次へ</button>
     <button class="small-btn" id="btn-graph">📈 収支グラフ</button>
+    <button class="small-btn" id="btn-stats">📊 リーク分析</button>
     <button class="small-btn" id="btn-export">📥 履歴エクスポート (<span id="hands-count">0</span>)</button>
     <button class="small-btn" id="btn-flag-export">🚩 保存分 (<span id="flag-count">0</span>)</button>
     <button class="small-btn" id="btn-reset-stack">🔄 バンクロールリセット</button>
@@ -892,6 +900,18 @@
       </div>
       <div class="pnl-summary" id="pnl-summary"></div>
       <div id="pnl-body"></div>
+    </div>
+  </div>
+
+  <!-- 📊 リーク分析ダッシュボード オーバーレイ -->
+  <div class="pnl-overlay" id="stats-overlay">
+    <div class="pnl-card">
+      <div class="pnl-head">
+        <h2>📊 リーク分析（自動集計）</h2>
+        <button class="pnl-close" id="stats-close">✕ 閉じる</button>
+      </div>
+      <div class="pnl-summary" id="stats-summary"></div>
+      <div id="stats-body"></div>
     </div>
   </div>
 
@@ -1750,6 +1770,9 @@ function bindActionButtons() {
   updateFlagCount();
   $('pnl-close').onclick = () => $('pnl-overlay').classList.remove('open');
   $('pnl-overlay').onclick = (e) => { if (e.target === $('pnl-overlay')) $('pnl-overlay').classList.remove('open'); };
+  $('btn-stats').onclick = showLeakDashboard; // 📊 リーク分析
+  $('stats-close').onclick = () => $('stats-overlay').classList.remove('open');
+  $('stats-overlay').onclick = (e) => { if (e.target === $('stats-overlay')) $('stats-overlay').classList.remove('open'); };
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -2347,6 +2370,84 @@ function resetBankroll() {
 }
 
 // ── 収支グラフ ──
+// ── 📊 リーク分析ダッシュボード（履歴から自動集計）──────────
+function computeLeakStats(arr) {
+  let n = arr.length, vpip = 0, pfr = 0, threebet = 0, pBet = 0, pCall = 0;
+  let sawFlop = 0, wtsd = 0, wonSd = 0, cbetOpp = 0, cbet = 0, pfrCheck = 0;
+  const POSL = ['UTG','MP','CO','BTN','SB','BB'];
+  const pos = {}; POSL.forEach(p => pos[p] = { n: 0, vpip: 0, net: 0 });
+  for (const h of arr) {
+    const P = h.hero_position; if (pos[P]) { pos[P].n++; pos[P].net += (h.hero_net || 0); }
+    const ha = (h.actions || []).filter(a => a.player === 'Hero');
+    const pre = ha.filter(a => a.street === 'preflop').map(a => a.action);
+    const post = ha.filter(a => ['flop','turn','river'].includes(a.street));
+    if (pre.some(x => ['call','raise','bet'].includes(x))) { vpip++; if (pos[P]) pos[P].vpip++; }
+    if (pre.includes('raise')) pfr++;
+    // 3-bet: Heroのプリフロップraiseの前に他者raiseがあったか
+    let seen = false;
+    for (const a of (h.actions || []).filter(a => a.street === 'preflop')) {
+      if (a.player === 'Hero' && a.action === 'raise' && seen) { threebet++; break; }
+      if (a.action === 'raise') seen = true;
+    }
+    for (const a of post) { if (a.action === 'bet' || a.action === 'raise') pBet++; else if (a.action === 'call') pCall++; }
+    const sf = !pre.includes('fold') && (h.board || []).length >= 3;
+    if (sf) {
+      sawFlop++;
+      if (pre.includes('raise')) {
+        cbetOpp++;
+        const flop = post.filter(a => a.street === 'flop').map(a => a.action);
+        if (flop.some(x => ['bet','raise'].includes(x))) cbet++;
+        else if (flop.includes('check')) pfrCheck++;
+      }
+      if (h.showdown) { wtsd++; if ((h.hero_net || 0) > 0) wonSd++; }
+    }
+  }
+  return { n, vpip, pfr, threebet, af: pCall ? pBet / pCall : (pBet ? Infinity : 0),
+           sawFlop, wtsd, wonSd, cbetOpp, cbet, pfrCheck, pos, POSL };
+}
+function showLeakDashboard() {
+  const arr = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
+  const sum = $('stats-summary'), body = $('stats-body');
+  if (arr.length === 0) {
+    sum.innerHTML = '';
+    body.innerHTML = '<div class="pnl-empty">まだハンド履歴がありません。<br>プレイすると VPIP/PFR/3bet/AF/Cベット率 などが自動で出ます。</div>';
+    $('stats-overlay').classList.add('open'); return;
+  }
+  const s = computeLeakStats(arr);
+  const pct = (a, b) => b ? Math.round(a * 100 / b) : 0;
+  const vpipP = pct(s.vpip, s.n), pfrP = pct(s.pfr, s.n), tbP = s.threebet * 100 / s.n;
+  const cbetP = s.cbetOpp ? Math.round(s.cbet * 100 / s.cbetOpp) : 0;
+  const wtsdP = s.sawFlop ? Math.round(s.wtsd * 100 / s.sawFlop) : 0;
+  const sdwP = s.wtsd ? Math.round(s.wonSd * 100 / s.wtsd) : 0;
+  const af = s.af === Infinity ? '∞' : s.af.toFixed(2);
+  const w = ok => ok ? '' : 'warn';
+  sum.innerHTML = `
+    <div class="box"><div class="l">ハンド</div><div class="v">${s.n}</div></div>
+    <div class="box"><div class="l">VPIP</div><div class="v ${w(vpipP>=18&&vpipP<=40)}">${vpipP}%</div></div>
+    <div class="box"><div class="l">PFR</div><div class="v">${pfrP}%</div></div>
+    <div class="box"><div class="l">3bet</div><div class="v ${w(tbP>=2)}">${tbP.toFixed(1)}%</div></div>
+    <div class="box"><div class="l">ポストAF</div><div class="v ${w(s.af>=1.2)}">${af}</div></div>
+    <div class="box"><div class="l">Cベット</div><div class="v ${w(cbetP>=52||s.cbetOpp<5)}">${cbetP}%</div></div>`;
+  const rows = s.POSL.map(p => {
+    const o = s.pos[p]; if (!o || !o.n) return '';
+    const c = o.net > 0 ? 'color:var(--success)' : (o.net < 0 ? 'color:var(--danger)' : '');
+    return `<tr><td>${p}</td><td>${o.n}</td><td>${pct(o.vpip,o.n)}%</td><td style="${c}">${(o.net>=0?'+':'')+o.net}</td></tr>`;
+  }).join('');
+  const notes = [];
+  if (s.cbetOpp >= 5 && cbetP < 52) notes.push(`Cベット率 <b class="warn">${cbetP}%</b>（標準55-70%）＝「迷ったらチェック」傾向。PFRでフロップ来たら"ボードが自分有利か"で打つ。`);
+  if (tbP < 2) notes.push(`3bet <b class="warn">${tbP.toFixed(1)}%</b>（標準3-5%）＝まだ少なめ。`);
+  if (vpipP > 40) notes.push(`VPIP <b class="warn">${vpipP}%</b>＝ルース過多気味。`);
+  body.innerHTML = `
+    <table class="lk-table">
+      <tr><th>位置</th><th>手数</th><th>VPIP</th><th>Net</th></tr>${rows}
+    </table>
+    <div class="lk-note">
+      フロップ到達 ${s.sawFlop} ／ WTSD ${wtsdP}% ／ SD勝率 ${sdwP}%<br>
+      ${notes.length ? '🚩 ' + notes.join('<br>🚩 ') : '✅ 目立つリーク信号なし（サンプル次第）'}
+      <br><span style="opacity:.65">※標準値は目安。フロップ到達が少ない時はポスト系指標はノイズ大。</span>
+    </div>`;
+  $('stats-overlay').classList.add('open');
+}
 function showPnlGraph() {
   const arr = JSON.parse(localStorage.getItem(LS_KEY) || '[]');
   const summary = $('pnl-summary');
