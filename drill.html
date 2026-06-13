@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cベット・ドリル — リーク特化</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1e3a2f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cベット">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root{
+    --bg:#0f1419; --panel:#1a2027; --panel2:#232b34; --text:#e4e8ec;
+    --muted:#8a939d; --hero:#ffd24a; --success:#5dd39e; --info:#5db3ff; --accent:#ff6b6b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;min-height:100vh;padding:16px;}
+  .app{max-width:560px;margin:0 auto;}
+  .header{text-align:center;margin-bottom:14px;}
+  .header .title{font-size:24px;font-weight:900;color:var(--hero);letter-spacing:1px;}
+  .header .sub{color:var(--muted);font-size:12px;margin-top:3px;}
+
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;}
+  .stat{background:var(--panel);border-radius:10px;padding:10px 6px;text-align:center;}
+  .stat .label{font-size:10px;color:var(--muted);}
+  .stat .value{font-size:18px;font-weight:800;margin-top:3px;}
+  .stat.good .value{color:var(--success);}
+  .stat.warn .value{color:var(--accent);}
+  .stat.streak .value{color:var(--hero);}
+
+  .play-area{background:var(--panel);border-radius:14px;padding:16px;margin-bottom:12px;}
+  .context{font-size:12px;color:var(--muted);text-align:center;line-height:1.6;margin-bottom:12px;background:var(--panel2);border-radius:8px;padding:8px 10px;}
+  .context b{color:var(--info);font-weight:700;}
+  .board-wrap,.hole-wrap{text-align:center;margin-bottom:10px;}
+  .zone-label{font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:6px;}
+  .cards{display:flex;gap:6px;justify-content:center;}
+  .card{width:44px;height:62px;background:#fff;color:#1a1a1a;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;box-shadow:0 2px 6px rgba(0,0,0,0.4);}
+  .card.red{color:#d23b3b;}
+  .card .rank{font-size:22px;line-height:1;}
+  .card .suit{font-size:18px;line-height:1.1;}
+  .card.hole{width:52px;height:74px;border:2px solid var(--hero);}
+  .card.hole .rank{font-size:26px;}
+  .card.hole .suit{font-size:22px;}
+
+  .prompt{text-align:center;font-size:14px;font-weight:700;margin:10px 0 4px;color:var(--text);}
+
+  .actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px;}
+  .btn{padding:18px 6px;border:2px solid var(--panel2);border-radius:12px;background:var(--panel2);color:var(--text);font-weight:800;font-size:15px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;transition:transform .1s,border-color .1s;}
+  .btn .key{font-size:10px;color:var(--muted);font-weight:600;}
+  .btn:active{transform:scale(0.96);}
+  .btn.check{color:var(--info);}
+  .btn.bet13,.btn.bet23{color:var(--success);}
+  .btn.correct{border-color:var(--success);background:rgba(93,211,158,0.18);}
+  .btn.wrong{border-color:var(--accent);background:rgba(255,107,107,0.18);}
+  .btn:disabled{opacity:.55;cursor:default;}
+
+  .feedback{margin-top:12px;border-radius:10px;padding:12px;font-size:13px;line-height:1.6;min-height:10px;}
+  .feedback.empty{display:none;}
+  .feedback.correct{background:rgba(93,211,158,0.12);border:1px solid var(--success);}
+  .feedback.wrong{background:rgba(255,107,107,0.12);border:1px solid var(--accent);}
+  .feedback.mixed{background:rgba(93,179,255,0.12);border:1px solid var(--info);}
+  .feedback .verdict{font-weight:800;margin-bottom:5px;}
+  .feedback .verdict.correct{color:var(--success);}
+  .feedback .verdict.wrong{color:var(--accent);}
+  .feedback .verdict.mixed{color:var(--info);}
+  .feedback .leak{color:var(--accent);font-weight:700;}
+  .feedback .size-note{color:var(--hero);font-size:12px;margin-top:4px;}
+
+  .history-section{background:var(--panel);border-radius:12px;padding:12px;margin-bottom:12px;}
+  .history-header{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);margin-bottom:8px;}
+  .history-list{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;}
+  .hist{display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 8px;border-radius:7px;background:var(--panel2);}
+  .hist.correct{border-left:3px solid var(--success);}
+  .hist.wrong{border-left:3px solid var(--accent);}
+  .hist.mixed{border-left:3px solid var(--info);}
+  .hist .mini-cards{font-weight:700;letter-spacing:1px;}
+  .hist .adv{font-size:10px;color:var(--muted);}
+  .hist .v{margin-left:auto;font-weight:700;}
+
+  .footer{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
+  .small-btn{padding:9px 12px;border:1px solid var(--panel2);border-radius:8px;background:var(--panel2);color:var(--text);font-size:12px;cursor:pointer;text-decoration:none;}
+  .small-btn.danger{color:var(--accent);}
+
+  @media(max-width:480px){
+    .card{width:40px;height:56px;}
+    .card.hole{width:48px;height:68px;}
+    .btn{padding:15px 4px;font-size:14px;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="title">🎯 Cベット・ドリル</div>
+    <div class="sub">リーク特化：迷ったらチェックを直す — HU・フロップ第一手</div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">問題</div><div class="value" id="st-num">0</div></div>
+    <div class="stat good"><div class="label">有利ベット率</div><div class="value" id="st-favrate">—</div></div>
+    <div class="stat warn"><div class="label">攻め不足</div><div class="value" id="st-under">0</div></div>
+    <div class="stat streak"><div class="label">連続</div><div class="value" id="st-streak">0</div></div>
+  </div>
+
+  <div class="play-area">
+    <div class="context" id="context">—</div>
+
+    <div class="board-wrap">
+      <div class="zone-label">フロップ（場）</div>
+      <div class="cards" id="board-cards"></div>
+    </div>
+    <div class="hole-wrap">
+      <div class="zone-label">あなたの手</div>
+      <div class="cards" id="hole-cards"></div>
+    </div>
+
+    <div class="prompt">第一手は？</div>
+    <div class="actions">
+      <button class="btn check" data-action="check"><span class="ico">👋</span><span>チェック</span><span class="key">C</span></button>
+      <button class="btn bet13" data-action="bet13"><span class="ico">↑</span><span>ベット ⅓</span><span class="key">1</span></button>
+      <button class="btn bet23" data-action="bet23"><span class="ico">⤴</span><span>ベット ⅔</span><span class="key">2</span></button>
+    </div>
+
+    <div class="feedback empty" id="feedback"></div>
+  </div>
+
+  <div class="history-section">
+    <div class="history-header"><span>📜 ログ</span><button class="small-btn" id="btn-clear">クリア</button></div>
+    <div class="history-list" id="history-list"></div>
+  </div>
+
+  <div class="footer">
+    <button class="small-btn" id="btn-skip">⏭ 次へ (Space)</button>
+    <button class="small-btn" id="btn-export">📥 エクスポート（先生FB用）</button>
+    <button class="small-btn danger" id="btn-reset">🔄 統計リセット</button>
+    <a class="small-btn" href="index.html" style="text-decoration:none;">🏠 メニュー</a>
+  </div>
+
+</div>
+
+<script>
+const RANKS='23456789TJQKA';
+const SUITS=['s','h','d','c'];
+const GLYPH={s:'♠',h:'♥',d:'♦',c:'♣'};
+const RED={s:false,h:true,d:true,c:false};
+
+function classifyBoard(board){
+  const ranks=board.map(c=>c.rank).sort((a,b)=>b-a);
+  const suits=board.map(c=>c.suit);
+  const max=ranks[0],min=ranks[2];
+  const hasA=ranks.includes(12),hasK=ranks.includes(11),hasQ=ranks.includes(10);
+  const paired=ranks[0]===ranks[1]||ranks[1]===ranks[2];
+  const sc={};suits.forEach(s=>sc[s]=(sc[s]||0)+1);
+  const maxSuit=Math.max(...Object.values(sc));
+  const monotone=maxSuit===3,twotone=maxSuit===2,rainbow=maxSuit===1;
+  const span=max-min;
+  const connected=!paired&&span<=4;
+  const allLow=max<=7;
+  let score=0;
+  if(hasA)score+=3;else if(hasK)score+=2;else if(hasQ)score+=1;
+  if(paired)score+=1;
+  if(rainbow)score+=1;
+  if(connected&&max<=8)score-=2;
+  if(allLow)score-=2;
+  if(monotone)score-=1;
+  if(twotone&&connected)score-=1;
+  const adv=score>=2?'fav':score<=-2?'unfav':'neutral';
+  const wet=monotone||twotone||connected;
+  return {adv,texture:wet?'wet':'dry',score,paired,connected,monotone,twotone,rainbow,max,min,allLow};
+}
+function straightStuff(ranks){
+  const set=new Set();
+  ranks.forEach(r=>{set.add(r);if(r===12)set.add(-1);});
+  const has=r=>set.has(r);
+  for(let lo=-1;lo<=8;lo++)
+    if(has(lo)&&has(lo+1)&&has(lo+2)&&has(lo+3)&&has(lo+4))return{made:true,oesd:false,gut:false};
+  let oesd=false,gut=false;
+  for(let lo=0;lo<=9;lo++){
+    if(has(lo)&&has(lo+1)&&has(lo+2)&&has(lo+3)){
+      const lowOpen=(lo-1)>=-1,highOpen=(lo+4)<=12;
+      if(lowOpen&&highOpen)oesd=true;else gut=true;
+    }
+  }
+  if(oesd)return{made:false,oesd:true,gut:false};
+  for(let lo=-1;lo<=8;lo++){let c=0;for(let k=lo;k<=lo+4;k++)if(has(k))c++;if(c>=4)gut=true;}
+  return{made:false,oesd:false,gut};
+}
+function evalFlop(hero,board){
+  const b=board.map(c=>c.rank);
+  const maxB=Math.max(...b);
+  const h=[hero[0].rank,hero[1].rank];
+  const heroPair=h[0]===h[1];
+  const st=straightStuff([...h,...b]);
+  let value='air';
+  if(heroPair){
+    if(b.includes(h[0]))value='strong';
+    else if(h[0]>maxB)value='strong';
+    else value='marginal';
+  }else{
+    const hits=h.filter(x=>b.includes(x));
+    if(hits.length===2)value='strong';
+    else if(hits.length===1)value=(hits[0]===maxB)?'strong':'marginal';
+    const hitsTrip=h.filter(x=>b.filter(y=>y===x).length>=2);
+    if(hitsTrip.length>=1)value='strong';
+  }
+  if(st.made)value='strong';
+  const sc={};[...hero,...board].forEach(c=>sc[c.suit]=(sc[c.suit]||0)+1);
+  const flushDraw=Math.max(...Object.values(sc))>=4;
+  const overcards=!heroPair&&h[0]>maxB&&h[1]>maxB&&value==='air';
+  let draw='none';
+  if(flushDraw||st.oesd)draw='strong';
+  else if(st.gut||overcards)draw='weak';
+  return{value,draw,flushDraw,straight:st,overcards};
+}
+function judge(hero,board){
+  const bc=classifyBoard(board);
+  const hv=evalFlop(hero,board);
+  const hasEquity=hv.value!=='air'||hv.draw!=='none';
+  const size=(bc.texture==='wet'||hv.draw==='strong')?'2/3':'1/3';
+  let rec,grade;
+  if(hv.value==='strong'||hv.draw==='strong'){rec='bet';grade='bet';}
+  else if(bc.adv==='fav'){
+    if(bc.texture==='dry'){rec='bet';grade='bet';}
+    else if(hasEquity){rec='bet';grade='bet';}
+    else{rec='bet';grade='mixed';}
+  }else if(bc.adv==='unfav'){
+    if(hv.value==='marginal'||hv.draw==='weak'){rec='check';grade='mixed';}
+    else{rec='check';grade='check';}
+  }else{
+    if(hasEquity){rec='bet';grade='mixed';}
+    else{rec='check';grade='mixed';}
+  }
+  return{rec,grade,size,board:bc,hero:hv};
+}
+
+function drawCards(n,exclude){
+  const used=new Set(exclude.map(c=>c.rank+c.suit));
+  const out=[];
+  while(out.length<n){
+    const r=Math.floor(Math.random()*13),s=SUITS[Math.floor(Math.random()*4)];
+    const k=r+s;
+    if(used.has(k))continue;
+    used.add(k);out.push({rank:r,suit:s});
+  }
+  return out;
+}
+function plausibleRaisingHand(){
+  for(let t=0;t<50;t++){
+    const c=drawCards(2,[]);
+    const hi=Math.max(c[0].rank,c[1].rank),lo=Math.min(c[0].rank,c[1].rank);
+    const pair=c[0].rank===c[1].rank,suited=c[0].suit===c[1].suit,gap=hi-lo;
+    if(pair)return c;
+    if(hi>=8&&lo>=8)return c;
+    if(suited&&hi===12)return c;
+    if(suited&&gap<=2&&lo>=2)return c;
+    if(hi>=9&&suited)return c;
+    if(hi>=10&&gap<=3)return c;
+    if(t>30)return c;
+  }
+  return drawCards(2,[]);
+}
+const BUCKET_WEIGHTS=[['fav',0.6],['unfav',0.3],['neutral',0.1]];
+function pickTargetBucket(){
+  const r=Math.random();let acc=0;
+  for(const w of BUCKET_WEIGHTS){acc+=w[1];if(r<acc)return w[0];}
+  return 'neutral';
+}
+function generateSpot(){
+  const target=pickTargetBucket();
+  let hero,board,j;
+  for(let t=0;t<80;t++){
+    hero=plausibleRaisingHand();
+    board=drawCards(3,hero);
+    j=judge(hero,board);
+    if(j.board.adv===target)break;
+  }
+  const heroIP=Math.random()<0.5;
+  let ctx;
+  if(heroIP){
+    const hp=['CO','BTN'][Math.floor(Math.random()*2)];
+    const vp=['SB','BB'][Math.floor(Math.random()*2)];
+    ctx='あなた=<b>'+hp+'</b>からオープン → <b>'+vp+'</b>がコール（HU）。フロップはチェックされ、<b>あなたの番</b>（IP）。';
+  }else{
+    const hp=['UTG','MP','CO'][Math.floor(Math.random()*3)];
+    ctx='あなた=<b>'+hp+'</b>からオープン → <b>BTN</b>がコール（HU）。<b>あなたが先にアクション</b>（OOP）。';
+  }
+  return {hero,board,judge:j,ctx,heroIP};
+}
+
+const $=id=>document.getElementById(id);
+const LS_STATS='cbet_drill_stats_v1';
+const LS_HIST='cbet_drill_history_v1';
+let state={num:0,streak:0,best:0,favSpots:0,favBet:0,clearBet:0,clearCheck:0,clearHit:0,under:0,over:0,mixed:0,history:[],current:null,locked:false};
+
+function loadStats(){
+  try{const s=JSON.parse(localStorage.getItem(LS_STATS)||'{}');Object.assign(state,s);}catch(e){}
+  try{state.history=JSON.parse(localStorage.getItem(LS_HIST)||'[]');}catch(e){state.history=[];}
+  state.current=null;state.locked=false;
+}
+function saveStats(){
+  const s=state;
+  localStorage.setItem(LS_STATS,JSON.stringify({num:s.num,streak:s.streak,best:s.best,favSpots:s.favSpots,favBet:s.favBet,clearBet:s.clearBet,clearCheck:s.clearCheck,clearHit:s.clearHit,under:s.under,over:s.over,mixed:s.mixed}));
+  localStorage.setItem(LS_HIST,JSON.stringify(s.history.slice(0,200)));
+}
+function cardHTML(c,hole){
+  return '<div class="card'+(RED[c.suit]?' red':'')+(hole?' hole':'')+'"><div class="rank">'+RANKS[c.rank]+'</div><div class="suit">'+GLYPH[c.suit]+'</div></div>';
+}
+function handStr(cards){return cards.map(c=>RANKS[c.rank]+GLYPH[c.suit]).join(' ');}
+
+function render(){
+  state.current=generateSpot();
+  state.locked=false;
+  const s=state.current;
+  $('context').innerHTML=s.ctx;
+  $('board-cards').innerHTML=s.board.map(c=>cardHTML(c,false)).join('');
+  $('hole-cards').innerHTML=s.hero.map(c=>cardHTML(c,true)).join('');
+  document.querySelectorAll('.btn').forEach(b=>{b.classList.remove('correct','wrong');b.disabled=false;});
+  $('feedback').className='feedback empty';$('feedback').innerHTML='';
+  updateStats();
+}
+function updateStats(){
+  $('st-num').textContent=state.num;
+  $('st-favrate').textContent=state.favSpots?Math.round(state.favBet*100/state.favSpots)+'%':'—';
+  $('st-under').textContent=state.under;
+  $('st-streak').textContent=state.streak;
+}
+const ADV_JP={fav:'あなた(レイザー)有利',unfav:'コーラー有利',neutral:'互角'};
+const TEX_JP={dry:'ドライ',wet:'ウェット'};
+const VAL_JP={strong:'強い手(バリュー)',marginal:'中堅ペア',air:'ノーペア'};
+function drawJP(d){return d==='strong'?'＋強ドロー':d==='weak'?'＋弱ドロー/オーバーカード':'';}
+
+function answer(action){
+  if(state.locked||!state.current)return;
+  state.locked=true;
+  const s=state.current,j=s.judge;
+  const userBet=action!=='check';
+  const userSize=action==='bet13'?'1/3':action==='bet23'?'2/3':null;
+  let result,leak=null;
+  if(j.grade==='mixed')result='mixed';
+  else if(j.grade==='bet'){result=userBet?'correct':'wrong';if(!userBet)leak='under';}
+  else{result=!userBet?'correct':'wrong';if(userBet)leak='over';}
+
+  state.num++;
+  if(j.board.adv==='fav'){state.favSpots++;if(userBet)state.favBet++;}
+  if(j.grade==='bet'){state.clearBet++;if(result==='correct')state.clearHit++;}
+  if(j.grade==='check'){state.clearCheck++;if(result==='correct')state.clearHit++;}
+  if(j.grade==='mixed')state.mixed++;
+  if(leak==='under')state.under++;
+  if(leak==='over')state.over++;
+  if(result==='correct'){state.streak++;if(state.streak>state.best)state.best=state.streak;}
+  else if(result==='wrong')state.streak=0;
+
+  let sizeNote='';
+  if(userBet&&j.rec==='bet'&&result!=='wrong'&&userSize!==j.size)
+    sizeNote='サイズは <b>'+j.size+'</b> 推奨（'+(j.board.texture==='wet'?'ウェット＝大きく・ポラライズ':'ドライ＝小さく・レンジベット')+'）';
+
+  state.history.unshift({
+    n:state.num,board:handStr(s.board),hero:handStr(s.hero),
+    adv:j.board.adv,score:j.board.score,texture:j.board.texture,
+    val:j.hero.value,draw:j.hero.draw,
+    user:action,rec:j.rec,recSize:j.size,grade:j.grade,result,leak
+  });
+  if(state.history.length>200)state.history.pop();
+  saveStats();renderHistory();
+  showFeedback(action,result,leak,sizeNote,j);
+  const betCorrectAction='bet'+j.size.replace('/','');
+  document.querySelectorAll('.btn').forEach(b=>{
+    if(result!=='mixed'){
+      if(j.rec==='bet'&&b.dataset.action===betCorrectAction)b.classList.add('correct');
+      if(j.rec==='check'&&b.dataset.action==='check')b.classList.add('correct');
+      if(b.dataset.action===action&&result==='wrong')b.classList.add('wrong');
+    }
+    b.disabled=true;
+  });
+  updateStats();
+  setTimeout(render,result==='correct'?800:result==='mixed'?1100:1900);
+}
+function showFeedback(action,result,leak,sizeNote,j){
+  const fb=$('feedback');
+  fb.className='feedback '+result;
+  let head;
+  if(result==='correct')head='<span class="verdict correct">✓ ナイス</span>';
+  else if(result==='mixed')head='<span class="verdict mixed">🟰 どちらもOK</span>';
+  else head='<span class="verdict wrong">✗ '+(leak==='under'?'<span class="leak">攻め不足（迷ったらチェック）</span>':'<span class="leak">過剰Cベット（打ちすぎ）</span>')+'</span>';
+  const recTxt=j.rec==='bet'?'ベット '+j.size:'チェック';
+  const reason='盤面=<b>'+ADV_JP[j.board.adv]+'</b>（スコア'+(j.board.score>=0?'+':'')+j.board.score+'・'+TEX_JP[j.board.texture]+'）／手='+VAL_JP[j.hero.value]+drawJP(j.hero.draw)+'。';
+  let rule;
+  if(j.grade==='bet')rule=(j.board.adv==='fav'&&j.board.texture==='dry')?'A/K/ペア/ドライ＝レンジベットで広く打つ。':'バリュー or 強ドロー＝打つ（セミブラフ）。';
+  else if(j.grade==='check')rule='不利盤面×エクイティ無し＝無理に打たず降りる。';
+  else rule='エクイティ薄め＝打つも見送るも一貫すればOK。';
+  fb.innerHTML=head+'<div>'+reason+'</div><div style="margin-top:4px;color:var(--muted)">推奨＝<b style="color:var(--text)">'+recTxt+'</b>。'+rule+'</div>'+(sizeNote?'<div class="size-note">📏 '+sizeNote+'</div>':'');
+}
+function miniCards(str){
+  return str.split(' ').map(function(t){var red=t.indexOf('♥')>=0||t.indexOf('♦')>=0;return '<span style="color:'+(red?'#ff8a8a':'#cfd6dd')+'">'+t+'</span>';}).join(' ');
+}
+function renderHistory(){
+  $('history-list').innerHTML=state.history.slice(0,40).map(function(h){
+    const mark=h.result==='correct'?'✓':h.result==='mixed'?'🟰':'✗';
+    const ua=h.user==='check'?'Check':h.user==='bet13'?'Bet⅓':'Bet⅔';
+    const advj={fav:'有利',unfav:'不利',neutral:'互角'}[h.adv];
+    return '<div class="hist '+h.result+'"><span class="mini-cards">'+miniCards(h.hero)+'</span><span class="adv">/ '+miniCards(h.board)+' <b>'+advj+'</b></span><span class="v">'+mark+' '+ua+'</span></div>';
+  }).join('')||'<div style="color:var(--muted);font-size:12px;text-align:center;padding:10px;">まだ回答なし</div>';
+}
+
+document.querySelectorAll('.btn').forEach(b=>b.addEventListener('click',()=>answer(b.dataset.action)));
+$('btn-skip').onclick=render;
+$('btn-clear').onclick=()=>{state.history=[];saveStats();renderHistory();};
+$('btn-reset').onclick=()=>{
+  if(!confirm('統計と履歴をすべてリセットしますか？'))return;
+  localStorage.removeItem(LS_STATS);localStorage.removeItem(LS_HIST);
+  state={num:0,streak:0,best:0,favSpots:0,favBet:0,clearBet:0,clearCheck:0,clearHit:0,under:0,over:0,mixed:0,history:[],current:null,locked:false};
+  render();renderHistory();
+};
+$('btn-export').onclick=()=>{
+  if(state.num===0){alert('エクスポートする回答がまだありません。');return;}
+  const now=new Date();
+  const ts=now.toISOString().replace(/[:.]/g,'-').slice(0,19);
+  const clear=state.clearBet+state.clearCheck;
+  const payload={
+    schema:'cbet_drill_export_v1',
+    drill:'Cベット・フロップ第一手（HU）',
+    target_leak:'ポストフロップ受動性「迷ったらチェック」',
+    judge_basis:'採用Cベットルール一致（ソルバーではない）：ボード有利度スコア＋手の強さ＋ドロー',
+    exported_at:now.toISOString(),
+    stats:{
+      total:state.num,
+      fav_board_bet_rate_pct:state.favSpots?Math.round(state.favBet*1000/state.favSpots)/10:null,
+      fav_board_spots:state.favSpots,
+      clear_spot_accuracy_pct:clear?Math.round(state.clearHit*1000/clear)/10:null,
+      underbet_count:state.under,
+      overbet_count:state.over,
+      mixed_count:state.mixed,
+      best_streak:state.best
+    },
+    history:state.history
+  };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download='cbet_drill_export_'+ts+'.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+};
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  const k=e.key.toLowerCase();
+  if(k==='c'){e.preventDefault();answer('check');}
+  else if(k==='1'){e.preventDefault();answer('bet13');}
+  else if(k==='2'){e.preventDefault();answer('bet23');}
+  else if(k===' '||k==='enter'){e.preventDefault();render();}
+});
+
+loadStats();renderHistory();render();
+</script>
+</body>
+</html>
